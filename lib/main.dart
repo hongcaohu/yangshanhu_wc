@@ -304,26 +304,14 @@ class _MyHomePageState extends State<MyHomePage> {
     //请求每个坑位的使用情况
     dioUtil.post("准备向【坑位串口】发送请求...");
     for (var i = 1; i <= 22; i++) {
-      // String idex = "";
-      // if (i < 10) {
-      //   idex = "0${i}";
-      // } else {
-      //   idex = "${i}";
-      // }
-      // int deviceId = int.parse(idex, radix: 16);
       Uint8List preData = Uint8List.fromList([i, 0x01, 0x00, 0x00, 0x00, 0x01]);
+      //crc modbus 校验码
       int crcResultReverse = ParametricCrc(16, 0x8005, 0xffff, 0x0000).convert(preData);
       Uint16List crc = Uint16List.fromList([crcResultReverse]);
 
       ByteData crcData = crc.buffer.asByteData(0, 2);
       int crcFirst = crcData.getUint8(0);
       int crcLast = crcData.getUint8(1);
-
-      //调整CRC Modbus 顺序
-      // String crcResultReverseStr = crcResultReverse.toRadixString(16);
-      // String crcResultLst2 = crcResultReverseStr.substring(2, 4);
-      // String crcResultStr = crcResultLst2 + crcResultReverseStr.substring(0, 2);
-      // int crcResult = int.parse(crcResultStr, radix: 16);
 
       //最终的请求串口实体
       Uint8List postData = Uint8List.fromList([i, 0x01, 0x00, 0x00, 0x00, 0x01, crcLast, crcFirst]);
@@ -345,8 +333,7 @@ class _MyHomePageState extends State<MyHomePage> {
   void fetchData2(UsbPort port) async {
     await port.setDTR(true);
     await port.setRTS(true);
-    port.setPortParameters(
-        115200, UsbPort.DATABITS_8, UsbPort.STOPBITS_1, UsbPort.PARITY_NONE);
+    port.setPortParameters(115200, UsbPort.DATABITS_8, UsbPort.STOPBITS_1, UsbPort.PARITY_NONE);
 
     // print first result and close port.
     // 01 01 01 00 xx xx
@@ -360,7 +347,6 @@ class _MyHomePageState extends State<MyHomePage> {
       });
       dioUtil.post("转为16进制为 >> $result");
 
-      print(event);
       int satisfaction = event[8];
       if(satisfaction==0x01) {
         smileNum += smileNum;
