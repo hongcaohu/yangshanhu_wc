@@ -313,17 +313,21 @@ class _MyHomePageState extends State<MyHomePage> {
       // int deviceId = int.parse(idex, radix: 16);
       Uint8List preData = Uint8List.fromList([i, 0x01, 0x00, 0x00, 0x00, 0x01]);
       int crcResultReverse = ParametricCrc(16, 0x8005, 0xffff, 0x0000).convert(preData);
+      Uint16List crc = Uint16List.fromList([crcResultReverse]);
 
-      crcResultReverse.bitLength;
+      ByteData crcData = crc.buffer.asByteData(0, 2);
+      int crcFirst = crcData.getUint8(0);
+      int crcLast = crcData.getUint8(1);
+
       //调整CRC Modbus 顺序
-      String crcResultReverseStr = crcResultReverse.toRadixString(16);
-      String crcResultLst2 = crcResultReverseStr.substring(2, 4);
-      String crcResultStr = crcResultLst2 + crcResultReverseStr.substring(0, 2);
-      int crcResult = int.parse(crcResultStr, radix: 16);
+      // String crcResultReverseStr = crcResultReverse.toRadixString(16);
+      // String crcResultLst2 = crcResultReverseStr.substring(2, 4);
+      // String crcResultStr = crcResultLst2 + crcResultReverseStr.substring(0, 2);
+      // int crcResult = int.parse(crcResultStr, radix: 16);
 
       //最终的请求串口实体
-      Uint8List postData = Uint8List.fromList([i, 0x01, 0x00, 0x00, 0x00, 0x01, crcResult]);
-      dioUtil.post("发送数据pre >> " + [i, 0x01, 0x00, 0x00, 0x00, 0x01, crcResult].toString());
+      Uint8List postData = Uint8List.fromList([i, 0x01, 0x00, 0x00, 0x00, 0x01, crcLast, crcFirst]);
+      dioUtil.post("发送数据pre >> " + [i, 0x01, 0x00, 0x00, 0x00, 0x01, crcLast, crcFirst].toString());
       dioUtil.post("发送数据post >> $postData");
       port.write(postData);
     }
