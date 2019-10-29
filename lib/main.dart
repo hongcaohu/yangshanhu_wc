@@ -304,18 +304,17 @@ class _MyHomePageState extends State<MyHomePage> {
     //请求每个坑位的使用情况
     dioUtil.post("准备向【坑位串口】发送请求...");
     for (var i = 1; i <= 22; i++) {
-      String idex = "";
-      if (i < 10) {
-        idex = "0${i}";
-      } else {
-        idex = "${i}";
-      }
-      int deviceId = int.parse(idex, radix: 16);
-      Uint8List preData =
-          Uint8List.fromList([deviceId, 0x01, 0x00, 0x00, 0x00, 0x01]);
-      int crcResultReverse =
-          ParametricCrc(16, 0x8005, 0xffff, 0x0000).convert(preData);
+      // String idex = "";
+      // if (i < 10) {
+      //   idex = "0${i}";
+      // } else {
+      //   idex = "${i}";
+      // }
+      // int deviceId = int.parse(idex, radix: 16);
+      Uint8List preData = Uint8List.fromList([i, 0x01, 0x00, 0x00, 0x00, 0x01]);
+      int crcResultReverse = ParametricCrc(16, 0x8005, 0xffff, 0x0000).convert(preData);
 
+      crcResultReverse.bitLength;
       //调整CRC Modbus 顺序
       String crcResultReverseStr = crcResultReverse.toRadixString(16);
       String crcResultLst2 = crcResultReverseStr.substring(2, 4);
@@ -323,9 +322,8 @@ class _MyHomePageState extends State<MyHomePage> {
       int crcResult = int.parse(crcResultStr, radix: 16);
 
       //最终的请求串口实体
-      Uint8List postData = Uint8List.fromList(
-          [deviceId, 0x01, 0x00, 0x00, 0x00, 0x01, crcResult]);
-      dioUtil.post("发送数据pre >> " + [deviceId, 0x01, 0x00, 0x00, 0x00, 0x01, crcResult].toString());
+      Uint8List postData = Uint8List.fromList([i, 0x01, 0x00, 0x00, 0x00, 0x01, crcResult]);
+      dioUtil.post("发送数据pre >> " + [i, 0x01, 0x00, 0x00, 0x00, 0x01, crcResult].toString());
       dioUtil.post("发送数据post >> $postData");
       port.write(postData);
     }
