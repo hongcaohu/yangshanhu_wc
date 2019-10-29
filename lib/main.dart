@@ -5,6 +5,7 @@ import 'package:crclib/crclib.dart';
 import 'package:flustars/flustars.dart';
 import 'package:flutter/material.dart';
 import 'package:usb_serial/usb_serial.dart';
+import 'package:yangshanhu_wc/utils/dioUtil.dart';
 
 import 'components/num.dart';
 import 'components/sizedImage.dart';
@@ -44,6 +45,9 @@ class _MyHomePageState extends State<MyHomePage> {
   TimerUtil timer;
   String date = "";
   String time = "";
+
+  DioUtils dioUtil = new DioUtils();
+  
 
   TimerUtil usbSerialTimer;
 
@@ -111,11 +115,21 @@ class _MyHomePageState extends State<MyHomePage> {
   int normalNum = 0;
   int sadNum = 0;
 
+  double tempData = 0.0;
+  double humData = 0.0;
+  double nhData = 0.0;
+  int pmData = 0;
+
+  List<UsbDevice> devices = [];
+  List<UsbPort> usbPorts = List<UsbPort>();
+
   // 1-14 是女厕
   // 15-20 是男厕
   // 21-22 残疾人位
   @override
   void initState() {
+
+    dioUtil.post("页面初始化开始...");
     super.initState();
 
     //初始化今日访问人数
@@ -126,6 +140,8 @@ class _MyHomePageState extends State<MyHomePage> {
     normalNum = SpUtil.getInt("normalNum") ?? 0;
     sadNum = SpUtil.getInt("sadNum") ?? 0;
 
+    //开始初始化定时器
+    dioUtil.post("初始化【当前时间计时】定时器");
     timer = TimerUtil();
     timer.setInterval(1000);
     timer.setOnTimerTickCallback((i) {
@@ -141,49 +157,100 @@ class _MyHomePageState extends State<MyHomePage> {
           SpUtil.putInt("todayFemale", 0);
           SpUtil.putInt("todayMan", 0);
         }
+
+        // Uint8List tt = Uint8List.fromList([0x10, 0x12]);
+        // print("==========");
+        // int first = tt[0];
+        // int second = tt[1];
+        // print(first.toRadixString(16));
+        // print(second.toRadixString(16));
+        // print(int.parse(first.toRadixString(16)+second.toRadixString(16), radix: 16));
       });
     });
+    //启动定时器
+    dioUtil.post("启动【当前时间计时】定时器");
     if (timer != null) {
       timer.startTimer();
     }
 
+    UsbSerial.usbEventStream.listen((UsbEvent msg) async {
+      if(msg.event == UsbEvent.ACTION_USB_ATTACHED) {
+        //监测到usb 上线
+        dioUtil.post("====== 有usb接入 >> ${json.encode(msg)}");
+      }
+      if(msg.event == UsbEvent.ACTION_USB_DETACHED) {
+        //监测到usb 下线
+        dioUtil.post("====== 有usb退出 >> ${json.encode(msg)}");
+      }
+      openUsbPorts();
+    });
+
+    openUsbPorts();//获取usb设备
+
     //USB Serial Timer
+    dioUtil.post("定时任务初始化【Usb Serial】");
     usbSerialTimer = TimerUtil();
     usbSerialTimer.setInterval(5000);
-    usbSerialTimer.setOnTimerTickCallback((i) {});
-    if (usbSerialTimer != null) {}
+    usbSerialTimer.setOnTimerTickCallback((i) {
+      this.fetchData();
+    });
+    dioUtil.post("定时任务启动【Usb Serial】");
+    if (usbSerialTimer != null) {
+      usbSerialTimer.startTimer();
+    }
+  }
+
+  void openUsbPorts() async {
+    dioUtil.post("正在获取USB设备...");
+    this.usbPorts = List<UsbPort>();//清零
+
+    this.devices = await UsbSerial.listDevices();
+    dioUtil.post("获取到USB设备：个数 >> ${devices.length}, 详细 >> ${json.encode(devices)}");
+    this.devices.forEach((d) async {
+      dioUtil.post("遍历获取到的device, USB设备 >> ${json.encode(d)}");
+      UsbPort _port = await d.create();
+      bool openResult = await _port.open();
+      if(!openResult) {
+        dioUtil.post("Failed to open >> ${json.encode(d)}");
+        return;
+      }
+      this.usbPorts.add(_port);
+    });
   }
   
   void fetchData() async {
-    List<UsbDevice> devices = await UsbSerial.listDevices();
-    print(devices);
-
-    UsbPort port;
-    if (devices.length == 0) {
+    dioUtil.post("fetchData.. device length: ${devices.length}");
+    if(usbPorts.length == 0) {
       return;
     }
-    port = await devices[0].create();
-
-    bool openResult = await port.open();
-    if (!openResult) {
-      print("Failed to open");
-      return;
-    }
+    UsbPort port = usbPorts[0];
     fetchData1(port);
+
+    if(usbPorts.length >= 2) {
+      UsbPort _port = usbPorts[1];
+      fetchData2(_port);
+    }
   }
 
   //请求坑位信息
   void fetchData1(UsbPort port) async {
+    dioUtil.post("开始请求【坑位】信息...");
     await port.setDTR(true);
     await port.setRTS(true);
 
-    port.setPortParameters(
-        115200, UsbPort.DATABITS_8, UsbPort.STOPBITS_1, UsbPort.PARITY_NONE);
+    port.setPortParameters(115200, UsbPort.DATABITS_8, UsbPort.STOPBITS_1, UsbPort.PARITY_NONE);
 
     // print first result and close port.
     // 01 01 01 00 xx xx
     // 地址 功能码 数据长度 数据 CRC校验
+    dioUtil.post("正在监听【坑位串口】传来的数据...");
     port.inputStream.listen((Uint8List event) {
+      dioUtil.post("监听到【坑位串口】传来的数据, event >> $event");
+      List<String> result = List<String>();
+      event.toList().map((i){
+        result.add(i.toRadixString(16));
+      });
+      dioUtil.post("转为16进制为 >> $result");
       print(event);
       int useFlag = event[3];
       int address = event[0];
@@ -216,25 +283,31 @@ class _MyHomePageState extends State<MyHomePage> {
         }
         this.bools[address-1] = useFlag==0x01 ? true : false;
         this.bools = List.from(bools);
-      });
 
-      //switch (address) {
-        // case 0x01: {
-        //   setState(() {
-        //     if(useFlag==0x01 && !this.f1) {
-        //       this.femaleUsing = this.femaleUsing + 1;
-        //     }else if(useFlag!=0x01 && this.f1) {
-        //       this.femaleUsing = this.femaleUsing - 1;
-        //     }
-        //     this.f1 = useFlag==0x01 ? true : false;
-        //   });
-        // }
-        // break;
-      //}
+
+        // 01 01 01 00 xx xx
+        // 地址 功能码 数据长度 数据 CRC校验
+        //温湿度 
+        if (address==0x28) {
+          //int mark = int.parse((length/2).toString());
+          //Uint8List tempData = event.sublist(3, 3+mark);
+          //String tempData;
+          //Uint8List humData = event.sublist(3+mark, 3+2*mark);
+          //tempData.toString();
+          this.tempData = int.parse(event[3].toRadixString(16)+event[4].toRadixString(16), radix: 16) / 10;
+          this.humData = int.parse(event[5].toRadixString(16)+event[5].toRadixString(16), radix: 16) / 10;
+
+        }else if(address==0x29) { //氨气
+          this.nhData = int.parse(event[3].toRadixString(16)+event[4].toRadixString(16), radix: 16) / 10;
+        }else if(address==0x2A) { //空气质量
+          this.pmData = int.parse(event[3].toRadixString(16)+event[4].toRadixString(16), radix: 16);
+        }
+      });
       
     });
 
     //请求每个坑位的使用情况
+    dioUtil.post("准备向【坑位串口】发送请求...");
     for (var i = 1; i <= 22; i++) {
       String idex = "";
       if (i < 10) {
@@ -257,9 +330,15 @@ class _MyHomePageState extends State<MyHomePage> {
       //最终的请求串口实体
       Uint8List postData = Uint8List.fromList(
           [deviceId, 0x01, 0x00, 0x00, 0x00, 0x01, crcResult]);
-
+      dioUtil.post("发送数据pre >> " + [deviceId, 0x01, 0x00, 0x00, 0x00, 0x01, crcResult].toString());
+      dioUtil.post("发送数据post >> $postData");
       port.write(postData);
     }
+
+    //温湿度区域
+    port.write(Uint8List.fromList([0x28, 0x03, 0x00, 0x00, 0x00, 0x02, 0xC3, 0xF2]));
+    port.write(Uint8List.fromList([0x29, 0x03, 0x00, 0x10, 0x00, 0x01, 0x83, 0xE7]));
+    port.write(Uint8List.fromList([0x2A, 0x03, 0x00, 0x08, 0x00, 0x01, 0x03, 0xD3]));
   }
 
   //请求评价信息
@@ -275,7 +354,15 @@ class _MyHomePageState extends State<MyHomePage> {
     // print first result and close port.
     // 01 01 01 00 xx xx
     // 地址 功能码 数据长度 数据 CRC校验
+    dioUtil.post("监听【评价串口】数据中...");
     port.inputStream.listen((Uint8List event) {
+      dioUtil.post("监听到【评价】数据 >> $event");
+      List<String> result = List<String>();
+      event.toList().map((i){
+        result.add(i.toRadixString(16));
+      });
+      dioUtil.post("转为16进制为 >> $result");
+
       print(event);
       int satisfaction = event[8];
       if(satisfaction==0x01) {
@@ -375,7 +462,7 @@ class _MyHomePageState extends State<MyHomePage> {
           top: 357,
           left: 180,
           child: Num(
-            number: "24.8 ℃",
+            number: this.tempData.toString() + " ℃",
           ),
         ),
         //湿度
@@ -383,7 +470,7 @@ class _MyHomePageState extends State<MyHomePage> {
           top: 395,
           left: 190,
           child: Num(
-            number: "33 %",
+            number: this.humData.toString()+ " %",
           ),
         ),
         //氨气
@@ -391,7 +478,7 @@ class _MyHomePageState extends State<MyHomePage> {
           top: 435,
           left: 180,
           child: Num(
-            number: "13ppm",
+            number: this.nhData.toString() + " ppm",
           ),
         ),
         //空气质量
@@ -399,7 +486,7 @@ class _MyHomePageState extends State<MyHomePage> {
           top: 475,
           left: 180,
           child: Num(
-            number: "PM2.5: 10",
+            number: "PM2.5: " + this.pmData.toString(),
           ),
         ),
 
