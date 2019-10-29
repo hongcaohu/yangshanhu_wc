@@ -158,7 +158,7 @@ class _MyHomePageState extends State<MyHomePage> {
           SpUtil.putInt("todayMan", 0);
         }
 
-        // Uint8List tt = Uint8List.fromList([0x10, 0x12]);
+        // Uint8List tt = Uint8List.fromList([0x1, 0x2]);
         // print("==========");
         // int first = tt[0];
         // int second = tt[1];
@@ -288,19 +288,14 @@ class _MyHomePageState extends State<MyHomePage> {
         // 01 01 01 00 xx xx
         // 地址 功能码 数据长度 数据 CRC校验
         //温湿度 
+        ByteData dataBuffer = event.buffer.asByteData(0, event.length);
         if (address==0x28) {
-          //int mark = int.parse((length/2).toString());
-          //Uint8List tempData = event.sublist(3, 3+mark);
-          //String tempData;
-          //Uint8List humData = event.sublist(3+mark, 3+2*mark);
-          //tempData.toString();
-          this.tempData = int.parse(event[3].toRadixString(16)+event[4].toRadixString(16), radix: 16) / 10;
-          this.humData = int.parse(event[5].toRadixString(16)+event[5].toRadixString(16), radix: 16) / 10;
-
+          this.tempData = dataBuffer.getUint16(3) / 10;
+          this.humData = dataBuffer.getUint16(5) / 10;
         }else if(address==0x29) { //氨气
-          this.nhData = int.parse(event[3].toRadixString(16)+event[4].toRadixString(16), radix: 16) / 10;
+          this.nhData = dataBuffer.getUint16(3) / 10;
         }else if(address==0x2A) { //空气质量
-          this.pmData = int.parse(event[3].toRadixString(16)+event[4].toRadixString(16), radix: 16);
+          this.pmData = dataBuffer.getUint16(3);
         }
       });
       
