@@ -28,7 +28,6 @@ dependencies:
   crclib: ^1.0.1
   dio: 2.2.2
   package_info: 0.4.0+6
-  ota_update: ^2.0.1
 
 dev_dependencies:
   flutter_test:
