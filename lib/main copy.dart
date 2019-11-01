@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crclib/crclib.dart';
@@ -102,7 +101,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   List<UsbDevice> devices = [];
   List<UsbPort> usbPorts = List<UsbPort>();
-  UsbPort receiveAndSendPort;
 
   double WW = 960;
   double HH = 540;
@@ -152,28 +150,23 @@ class _MyHomePageState extends State<MyHomePage> {
     }
 
     UsbSerial.usbEventStream.listen((UsbEvent msg) async {
-
-      //非USB鼠标
-      if(!msg.device.productName.contains('Mouse')) {
-        if (msg.event == UsbEvent.ACTION_USB_ATTACHED) {
-          //监测到usb 上线
-          dioUtil.post("====== 有usb接入 >> $msg");
-        }
-        if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
-          //监测到usb 下线
-          dioUtil.post("====== 有usb退出 >> $msg");
-        }
-        openUsbPorts();
+      if (msg.event == UsbEvent.ACTION_USB_ATTACHED) {
+        //监测到usb 上线
+        dioUtil.post("====== 有usb接入 >> $msg");
       }
-
+      if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
+        //监测到usb 下线
+        dioUtil.post("====== 有usb退出 >> $msg");
+      }
+      openUsbPorts();
     });
+
     openUsbPorts(); //获取usb设备
-    //Future.delayed(Duration(milliseconds: 1000), doReqData);
 
     //USB Serial Timer
     dioUtil.post("定时任务初始化【Usb Serial】");
     usbSerialTimer = TimerUtil();
-    usbSerialTimer.setInterval(8000);
+    usbSerialTimer.setInterval(5000);
     usbSerialTimer.setOnTimerTickCallback((i) {
       this.fetchData();
     });
@@ -181,8 +174,6 @@ class _MyHomePageState extends State<MyHomePage> {
     if (usbSerialTimer != null) {
       usbSerialTimer.startTimer();
     }
-
-
   }
 
   void openUsbPorts() async {
@@ -193,34 +184,24 @@ class _MyHomePageState extends State<MyHomePage> {
     dioUtil.post("获取到 device >> ${devices.length}-$devices");
     dioUtil.post(
         "获取到USB设备：个数 >> ${devices.length}, 详细 >> $devices");
-
     this.devices.forEach((d) async {
-      if(!d.productName.contains('Mouse')) {
-        dioUtil.post("遍历获取到的device, USB设备 >> $d");
-        UsbPort _port = await d.create();
-        bool openResult = await _port.open();
-        if (!openResult) {
-          dioUtil.post("Failed to open >> $d");
-        }else {
-          this.usbPorts.add(_port);
-        }
+      dioUtil.post("遍历获取到的device, USB设备 >> $d");
+      UsbPort _port = await d.create();
+      bool openResult = await _port.open();
+      if (!openResult) {
+        dioUtil.post("Failed to open >> $d");
+      }else {
+        this.usbPorts.add(_port);
       }
-
-    });
-
-    //3秒钟后启动
-    Future.delayed(Duration(milliseconds: 3000), () {
-      fetchData();
     });
   }
 
-  void fetchData() {
+  void fetchData() async {
     dioUtil.post("fetchData.. device length: ${devices.length}");
     if (usbPorts.length == 0) {
       return;
     }
     UsbPort port = usbPorts[0];
-
     fetchData1(port);
 
     if (usbPorts.length >= 2) {
@@ -302,46 +283,33 @@ class _MyHomePageState extends State<MyHomePage> {
       });
     });
 
-    //先设置收发port
-    this.receiveAndSendPort = port;
-
     //请求每个坑位的使用情况
-    //dioUtil.post("准备向【坑位串口】发送请求...");
+    dioUtil.post("准备向【坑位串口】发送请求...");
+    for (var i = 1; i <= 22; i++) {
+      Uint8List preData = Uint8List.fromList([i, 0x01, 0x00, 0x00, 0x00, 0x01]);
+      //crc modbus 校验码
+      int crcResultReverse =
+          ParametricCrc(16, 0x8005, 0xffff, 0x0000).convert(preData);
+      Uint16List crc = Uint16List.fromList([crcResultReverse]);
 
-    for (var i = 1; i <= 25; i++) {
-      sleep(Duration(milliseconds: 200));
+      ByteData crcData = crc.buffer.asByteData(0, 2);
+      int crcFirst = crcData.getUint8(0);
+      int crcLast = crcData.getUint8(1);
 
-      if(i<=22) {
-        Uint8List preData = Uint8List.fromList([i, 0x01, 0x00, 0x00, 0x00, 0x01]);
-        //crc modbus 校验码
-        int crcResultReverse =
-            ParametricCrc(16, 0x8005, 0xffff, 0x0000).convert(preData);
-        Uint16List crc = Uint16List.fromList([crcResultReverse]);
-
-        ByteData crcData = crc.buffer.asByteData(0, 2);
-        int crcFirst = crcData.getUint8(0);
-        int crcLast = crcData.getUint8(1);
-
-        //最终的请求串口实体
-        Uint8List postData = Uint8List.fromList(
-            [i, 0x01, 0x00, 0x00, 0x00, 0x01, crcFirst, crcLast]);
-        dioUtil.post("发送数据post >> $postData");
-        port.write(postData);
-
-      }else if(i==23) {
-        port.write(Uint8List.fromList([0x28, 0x03, 0x00, 0x00, 0x00, 0x02, 0xC3, 0xF2]));
-      }else if(i==24) {
-        port.write(Uint8List.fromList([0x29, 0x03, 0x00, 0x10, 0x00, 0x01, 0x83, 0xE7]));
-      }else if(i==25) {
-        port.write(Uint8List.fromList([0x2A, 0x03, 0x00, 0x08, 0x00, 0x01, 0x03, 0xD3]));
-      }
-
+      //最终的请求串口实体
+      Uint8List postData = Uint8List.fromList(
+          [i, 0x01, 0x00, 0x00, 0x00, 0x01, crcFirst, crcLast]);
+      dioUtil.post("发送数据post >> $postData");
+      port.write(postData);
     }
 
     //温湿度区域
-    // port.write(Uint8List.fromList([0x28, 0x03, 0x00, 0x00, 0x00, 0x02, 0xC3, 0xF2]));
-    // port.write(Uint8List.fromList([0x29, 0x03, 0x00, 0x10, 0x00, 0x01, 0x83, 0xE7]));
-    // port.write(Uint8List.fromList([0x2A, 0x03, 0x00, 0x08, 0x00, 0x01, 0x03, 0xD3]));
+    port.write(
+        Uint8List.fromList([0x28, 0x03, 0x00, 0x00, 0x00, 0x02, 0xC3, 0xF2]));
+    port.write(
+        Uint8List.fromList([0x29, 0x03, 0x00, 0x10, 0x00, 0x01, 0x83, 0xE7]));
+    port.write(
+        Uint8List.fromList([0x2A, 0x03, 0x00, 0x08, 0x00, 0x01, 0x03, 0xD3]));
   }
 
   //请求评价信息
@@ -378,47 +346,6 @@ class _MyHomePageState extends State<MyHomePage> {
         SpUtil.putInt("sadNum", sadNum);
       }
     });
-  }
-
-  doReqData() {
-    //请求每个坑位的使用情况
-    dioUtil.post("准备向【坑位串口】发送请求...");
-
-    while(true) {
-      print("[doReqData]");
-      sleep(Duration(milliseconds: 200));
-      if(this.receiveAndSendPort != null) {
-        for (var i = 1; i <= 25; i++) {
-          sleep(Duration(milliseconds: 200));
-          if(i<=22) {
-            Uint8List preData = Uint8List.fromList([i, 0x01, 0x00, 0x00, 0x00, 0x01]);
-            //crc modbus 校验码
-            int crcResultReverse =
-                ParametricCrc(16, 0x8005, 0xffff, 0x0000).convert(preData);
-            Uint16List crc = Uint16List.fromList([crcResultReverse]);
-
-            ByteData crcData = crc.buffer.asByteData(0, 2);
-            int crcFirst = crcData.getUint8(0);
-            int crcLast = crcData.getUint8(1);
-
-            //最终的请求串口实体
-            Uint8List postData = Uint8List.fromList(
-                [i, 0x01, 0x00, 0x00, 0x00, 0x01, crcFirst, crcLast]);
-            dioUtil.post("发送数据post >> $postData");
-            this.receiveAndSendPort.write(postData);
-
-          }else if(i==23) {
-            this.receiveAndSendPort.write(Uint8List.fromList([0x28, 0x03, 0x00, 0x00, 0x00, 0x02, 0xC3, 0xF2]));
-          }else if(i==24) {
-            this.receiveAndSendPort.write(Uint8List.fromList([0x29, 0x03, 0x00, 0x10, 0x00, 0x01, 0x83, 0xE7]));
-          }else if(i==25) {
-            this.receiveAndSendPort.write(Uint8List.fromList([0x2A, 0x03, 0x00, 0x08, 0x00, 0x01, 0x03, 0xD3]));
-          }
-        }
-      }else {
-        dioUtil.post("没有获取到发送端口");
-      }
-    }
   }
 
   @override
