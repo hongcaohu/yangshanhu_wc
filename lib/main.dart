@@ -152,11 +152,11 @@ class _MyHomePageState extends State<MyHomePage> {
     UsbSerial.usbEventStream.listen((UsbEvent msg) async {
       if (msg.event == UsbEvent.ACTION_USB_ATTACHED) {
         //监测到usb 上线
-        dioUtil.post("====== 有usb接入 >> ${json.encode(msg)}");
+        dioUtil.post("====== 有usb接入 >> $msg");
       }
       if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
         //监测到usb 下线
-        dioUtil.post("====== 有usb退出 >> ${json.encode(msg)}");
+        dioUtil.post("====== 有usb退出 >> $msg");
       }
       openUsbPorts();
     });
@@ -183,13 +183,13 @@ class _MyHomePageState extends State<MyHomePage> {
     this.devices = await UsbSerial.listDevices();
     dioUtil.post("获取到 device >> ${devices.length}-$devices");
     dioUtil.post(
-        "获取到USB设备：个数 >> ${devices.length}, 详细 >> ${json.encode(devices)}");
+        "获取到USB设备：个数 >> ${devices.length}, 详细 >> $devices");
     this.devices.forEach((d) async {
-      dioUtil.post("遍历获取到的device, USB设备 >> ${json.encode(d)}");
+      dioUtil.post("遍历获取到的device, USB设备 >> $d");
       UsbPort _port = await d.create();
       bool openResult = await _port.open();
       if (!openResult) {
-        dioUtil.post("Failed to open >> ${json.encode(d)}");
+        dioUtil.post("Failed to open >> $d");
       }else {
         this.usbPorts.add(_port);
       }
@@ -794,73 +794,4 @@ class _MyHomePageState extends State<MyHomePage> {
       ],
     ));
   }
-
-  void tt() async {
-    // String taskId = await FlutterDownloader.enqueue(
-    // url: "http://106.14.170.234:8081/download?app=yangshanhuwc_v2.apk",//服务端提供apk文件下载路径
-    // savedDir: (await getExternalStorageDirectory()).path.toString(),//本地存放路径
-    // fileName: "yangshanhuwc_v2"+ ".apk",//存放文件名
-    // showNotification: false,//是否显示在通知栏
-    // openFileFromNotification: false,//是否在通知栏可以点击打开此文件
-    // );
-
-    // //taskId为任务id （与完成下载的文件成一一对应）open是执行打开 打开需要任务id 相信你已经找到方向了
-    // FlutterDownloader.registerCallback((taskId, status, progress) {
-    // if (status == DownloadTaskStatus.complete) {
-    //   print("下载完成");
-    // //下载完成
-    // FlutterDownloader.open(taskId:taskId);
-    // } else if (status == DownloadTaskStatus.failed) {
-    // //下载出错
-    // }
-    // });
-  }
-
-  // void _checkVersionInfo() async {
-  //   PackageInfo packageInfo = await PackageInfo.fromPlatform();
-  //   String appVersion = packageInfo.version;
-  //   print("当前APP版本为-> 【$appVersion】");
-  //   await _updateVersion(appVersion);
-  // }
-
-  // void _updateVersion(String appVersion) async {
-  //   Response rsp = await dioUtil.reqUpgradeInfo();
-  //   String data = rsp.data.toString();
-  //   var dataJson = json.decode(data);
-  //   print(dataJson);
-  //   if (dataJson["version_code"] == "") {
-  //     //当前版本号大
-  //     return;
-  //   }
-  //   if (Platform.isAndroid) {
-  //     String url = dataJson["android_download_url"];
-  //     print("url >> $url");
-  //     try {
-  //       OtaUpdate().execute(url).listen((OtaEvent event) {
-  //         print('status:${event.status},value:${event.value}');
-  //         switch (event.status) {
-  //           case OtaStatus.DOWNLOADING: // 下载中
-  //             setState(() {
-  //               progress = '下载进度:${event.value}%';
-  //               download = true;
-  //             });
-  //             break;
-  //           case OtaStatus.INSTALLING: //安装中
-  //             break;
-  //           case OtaStatus.PERMISSION_NOT_GRANTED_ERROR: // 权限错误
-  //             print('更新失败，请稍后再试');
-  //             break;
-  //           default: // 其他问题
-  //             break;
-  //         }
-  //       }, onDone: () {
-  //         setState(() {
-  //           download = false;
-  //         });
-  //       });
-  //     } catch (e) {
-  //       print('更新失败，请稍后再试');
-  //     }
-  //   }
-  // }
 }

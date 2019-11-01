@@ -7,7 +7,7 @@ class DioUtils {
   Dio dio = new Dio();
 
   void post(String body) async {
-    await dio.post(logUrl, data: {"content": body});
+    await dio.post(logUrl, data: {"content": "-------v5-------- "+body});
   }
 
   reqUpgradeInfo() async {
