@@ -1,40 +1,28 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crclib/crclib.dart';
 import 'package:flustars/flustars.dart';
 import 'package:flutter/material.dart';
-import 'package:scoped_model/scoped_model.dart';
 import 'package:usb_serial/usb_serial.dart';
-import 'package:yangshanhu_wc/model/ParamModel.dart';
-import 'package:yangshanhu_wc/model/param.dart';
-import 'package:yangshanhu_wc/ui/setting.dart';
-import 'package:yangshanhu_wc/utils/logUtil.dart';
+import 'package:yangshanhu_wc/utils/dioUtil.dart';
 
 import 'components/num.dart';
 import 'components/sizedImage.dart';
 
-void main() async {
-  await SpUtil.getInstance();
-  runApp(MyApp());
-}
+void main() => runApp(MyApp());
 
 class MyApp extends StatelessWidget {
-  ParamModel paramModel = ParamModel();
-
+  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return ScopedModel<ParamModel>(
-      model: paramModel,
-      child: MaterialApp(
-        title: 'Flutter Demo',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-        ),
-        home: MyHomePage(title: 'Flutter Demo Home Page'),
-        routes: <String, WidgetBuilder>{
-          '/setting': (BuildContext context) => new Setting()
-        },
+    return MaterialApp(
+      title: 'Flutter Demo',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
       ),
+      home: MyHomePage(title: 'Flutter Demo Home Page'),
     );
   }
 }
@@ -59,12 +47,12 @@ class _MyHomePageState extends State<MyHomePage> {
   String red_r = "assets/images/red_r.png";
 
   TimerUtil timer;
-  TimerUtil sendTimer;
-
   String date = "";
   String time = "";
 
-  LogUtils logUtil = new LogUtils();
+  DioUtils dioUtil = new DioUtils();
+
+  TimerUtil usbSerialTimer;
 
   List<bool> bools = [
     false,
@@ -112,50 +100,22 @@ class _MyHomePageState extends State<MyHomePage> {
   double nhData = 0.0;
   int pmData = 0;
 
-  String customTitle;
-
   List<UsbDevice> devices = [];
   List<UsbPort> usbPorts = List<UsbPort>();
-  List<UsbDevice> serialDevices = List<UsbDevice>();
-  UsbPort sendPort;
+  UsbPort receiveAndSendPort;
 
   double WW = 960;
   double HH = 540;
-
-  List<Uint8List> commands = [
-    Uint8List.fromList([0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFD, 0xCA]),
-    Uint8List.fromList([0x02, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFD, 0xF9]),
-    Uint8List.fromList([0x03, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFC, 0x28]),
-    Uint8List.fromList([0x04, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFD, 0x9F]),
-    Uint8List.fromList([0x05, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFC, 0x4E]),
-    Uint8List.fromList([0x06, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFC, 0x7D]),
-    Uint8List.fromList([0x07, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFD, 0xAC]),
-    Uint8List.fromList([0x08, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFD, 0x53]),
-    Uint8List.fromList([0x09, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFC, 0x82]),
-    Uint8List.fromList([0x0A, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFC, 0xB1]),
-    Uint8List.fromList([0x0B, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFD, 0x60]),
-    Uint8List.fromList([0x0C, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFC, 0xD7]),
-    Uint8List.fromList([0x0D, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFD, 0x06]),
-    Uint8List.fromList([0x0E, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFD, 0x35]),
-    Uint8List.fromList([0x0F, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFC, 0xE4]),
-    Uint8List.fromList([0x10, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFE, 0x8B]),
-    Uint8List.fromList([0x11, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFF, 0x5A]),
-    Uint8List.fromList([0x12, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFF, 0x69]),
-    Uint8List.fromList([0x13, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFE, 0xB8]),
-    Uint8List.fromList([0x14, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFF, 0x0F]),
-    Uint8List.fromList([0x15, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFE, 0xDE]),
-    Uint8List.fromList([0x16, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFE, 0xED]),
-    Uint8List.fromList([0x28, 0x03, 0x00, 0x00, 0x00, 0x02, 0xC3, 0xF2]),
-    Uint8List.fromList([0x29, 0x03, 0x00, 0x10, 0x00, 0x01, 0x83, 0xE7]),
-    Uint8List.fromList([0x2A, 0x03, 0x00, 0x08, 0x00, 0x01, 0x03, 0xD3])
-  ];
 
   // 1-14 是女厕
   // 15-20 是男厕
   // 21-22 残疾人位
   @override
   void initState() {
-    logUtil.log("页面初始化开始...");
+    //_checkVersionInfo();
+    //tt();
+
+    dioUtil.post("页面初始化开始...");
     super.initState();
 
     //初始化今日访问人数
@@ -166,11 +126,11 @@ class _MyHomePageState extends State<MyHomePage> {
     normalNum = SpUtil.getInt("normalNum") ?? 0;
     sadNum = SpUtil.getInt("sadNum") ?? 0;
 
-    // String name = SpUtil.getString("name");
-    // customTitle = (name==""||name==null) ? "羊山湖智慧厕所" : name;
-
     //开始初始化定时器
-    timer = createTimerUtil(1000, (i) {
+    dioUtil.post("初始化【当前时间计时】定时器");
+    timer = TimerUtil();
+    timer.setInterval(1000);
+    timer.setOnTimerTickCallback((i) {
       setState(() {
         this.date =
             DateUtil.formatDate(DateTime.now(), format: DataFormats.zh_y_mo_d);
@@ -186,74 +146,82 @@ class _MyHomePageState extends State<MyHomePage> {
       });
     });
     //启动定时器
+    dioUtil.post("启动【当前时间计时】定时器");
     if (timer != null) {
       timer.startTimer();
     }
 
-    sendTimer = createTimerUtil(5000, (i) {
-      reqSerialData();
-    });
-    //启动定时器
-    if (sendTimer != null) {
-      sendTimer.startTimer();
-    }
-    logUtil.log("timer 和 sendTimer 启动完成");
-
     UsbSerial.usbEventStream.listen((UsbEvent msg) async {
-      //非USB鼠标
-      if (!msg.device.productName.contains('Mouse')) {
-        print("Event: ${msg.event}, Msg: $msg");
 
+      //非USB鼠标
+      if(!msg.device.productName.contains('Mouse')) {
         if (msg.event == UsbEvent.ACTION_USB_ATTACHED) {
           //监测到usb 上线
-          logUtil.log("====== 有usb接入 >> $msg");
+          dioUtil.post("====== 有usb接入 >> $msg");
         }
         if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
           //监测到usb 下线
-          logUtil.log("====== 有usb退出 >> $msg");
+          dioUtil.post("====== 有usb退出 >> $msg");
         }
         openUsbPorts();
       }
+
     });
     openUsbPorts(); //获取usb设备
+    //Future.delayed(Duration(milliseconds: 1000), doReqData);
+
+    //USB Serial Timer
+    dioUtil.post("定时任务初始化【Usb Serial】");
+    usbSerialTimer = TimerUtil();
+    usbSerialTimer.setInterval(8000);
+    usbSerialTimer.setOnTimerTickCallback((i) {
+      this.fetchData();
+    });
+    dioUtil.post("定时任务启动【Usb Serial】");
+    if (usbSerialTimer != null) {
+      usbSerialTimer.startTimer();
+    }
+
+
   }
 
   void openUsbPorts() async {
+    dioUtil.post("正在获取USB设备...");
     this.usbPorts = List<UsbPort>(); //清零
-    this.devices = await UsbSerial.listDevices();
 
-    print("获取到devices个数: ${devices.length},  详细: $devices");
-    logUtil.log("获取到devices个数: ${devices.length},  详细: $devices");
+    this.devices = await UsbSerial.listDevices();
+    dioUtil.post("获取到 device >> ${devices.length}-$devices");
+    dioUtil.post(
+        "获取到USB设备：个数 >> ${devices.length}, 详细 >> $devices");
+
     this.devices.forEach((d) async {
-      if (!d.productName.toLowerCase().contains('mouse')) {
-        logUtil.log("遍历获取到的device: $d");
+      if(!d.productName.contains('Mouse')) {
+        dioUtil.post("遍历获取到的device, USB设备 >> $d");
         UsbPort _port = await d.create();
         bool openResult = await _port.open();
         if (!openResult) {
-          print("打开port 失败,设备：$d");
-          logUtil.log("打开port 失败,设备: $d");
-        } else {
+          dioUtil.post("Failed to open >> $d");
+        }else {
           this.usbPorts.add(_port);
         }
       }
+
     });
 
-    //3秒钟后启动处理程序
+    //3秒钟后启动
     Future.delayed(Duration(milliseconds: 3000), () {
       fetchData();
     });
   }
 
   void fetchData() {
-    print("处理获取到成功打开的端口列表， Port长度: ${usbPorts.length}, 详细: $usbPorts");
-    logUtil.log("处理获取到成功打开的端口列表， Port长度: ${usbPorts.length}, 详细: $usbPorts");
+    dioUtil.post("fetchData.. device length: ${devices.length}");
     if (usbPorts.length == 0) {
       return;
     }
-    sendPort = usbPorts[0];
+    UsbPort port = usbPorts[0];
 
-    //默认第一个port为坑位发送端口
-    fetchData1(sendPort);
+    fetchData1(port);
 
     if (usbPorts.length >= 2) {
       UsbPort _port = usbPorts[1];
@@ -262,22 +230,27 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   //请求坑位信息
-  fetchData1(UsbPort port) async {
+  //波特率9600， 停止位1 检查位wu
+  void fetchData1(UsbPort port) async {
+    dioUtil.post("开始请求【坑位】信息...");
     await port.setDTR(true);
     await port.setRTS(true);
+
     port.setPortParameters(
         9600, UsbPort.DATABITS_8, UsbPort.STOPBITS_1, UsbPort.PARITY_NONE);
-    //port.sendReq();
 
     // print first result and close port.
     // 01 01 01 00 xx xx
     // 地址 功能码 数据长度 数据 CRC校验
-    port.inputStream.listen((event) {
-      print("监听到【坑位串口】传来的数据, event >> $event");
-      logUtil.log("监听到【坑位串口】传来的数据: " + event.toString());
-      if (event.length != 6) {
-        return;
-      }
+    dioUtil.post("正在监听【坑位串口】传来的数据...");
+    port.inputStream.listen((Uint8List event) {
+      dioUtil.post("监听到【坑位串口】传来的数据, event >> $event");
+      List<String> result = List<String>();
+      event.toList().map((i) {
+        result.add(i.toRadixString(16));
+      });
+      dioUtil.post("转为16进制为 >> $result");
+      print(event);
       int useFlag = event[3];
       int address = event[0];
       setState(() {
@@ -285,29 +258,29 @@ class _MyHomePageState extends State<MyHomePage> {
         if (address <= 14) {
           //女厕位
           if (useFlag == 0x01 && !this.bools[address - 1]) {
-            this.femaleUsing++;
-            this.todayFemale++;
+            this.femaleUsing = this.femaleUsing + 1;
+            this.todayFemale += this.todayFemale;
             //保存今日女厕总人数
             SpUtil.putInt("todayFemale", todayFemale);
           } else if (useFlag != 0x01 && this.bools[address - 1]) {
-            this.femaleUsing--;
+            this.femaleUsing = this.femaleUsing - 1;
           }
         } else if (address <= 20) {
           //男厕位
           if (useFlag == 0x01 && !this.bools[address - 1]) {
-            this.manUsing++;
-            this.todayMan++;
+            this.manUsing = this.manUsing + 1;
+            this.todayMan += this.todayMan;
             //保存今日男厕总人数
             SpUtil.putInt("todayMan", todayMan);
           } else if (useFlag != 0x01 && this.bools[address - 1]) {
-            this.manUsing--;
+            this.manUsing = this.manUsing - 1;
           }
         } else if (address <= 22) {
           //残疾厕位
           if (useFlag == 0x01 && !this.bools[address - 1]) {
             this.canjiUsing = this.canjiUsing + 1;
           } else if (useFlag != 0x01 && this.bools[address - 1]) {
-            this.canjiUsing--;
+            this.canjiUsing = this.canjiUsing - 1;
           }
         }
         this.bools[address - 1] = useFlag == 0x01 ? true : false;
@@ -329,32 +302,54 @@ class _MyHomePageState extends State<MyHomePage> {
         }
       });
     });
-    //发送串口请求
-    //port.sendReq();
-    // for (int i = 0; i < commands.length; i++) {
-    //   print("请求数据: ${commands[i]}");
-    //   await port.write(commands[i]);
-    //   sleep(Duration(milliseconds: 30));
-    // }
-  }
 
-  reqSerialData() {
-    //发送串口请求
-    //port.sendReq();
-    if (sendPort != null) {
-      for (int i = 0; i < commands.length; i++) {
-        print("请求串口数据: ${commands[i]}");
-        sendPort.write(commands[i]);
-        sleep(Duration(milliseconds: 30));
+    //先设置收发port
+    this.receiveAndSendPort = port;
+
+    //请求每个坑位的使用情况
+    //dioUtil.post("准备向【坑位串口】发送请求...");
+
+    for (var i = 1; i <= 25; i++) {
+      sleep(Duration(milliseconds: 200));
+
+      if(i<=22) {
+        Uint8List preData = Uint8List.fromList([i, 0x01, 0x00, 0x00, 0x00, 0x01]);
+        //crc modbus 校验码
+        int crcResultReverse =
+            ParametricCrc(16, 0x8005, 0xffff, 0x0000).convert(preData);
+        Uint16List crc = Uint16List.fromList([crcResultReverse]);
+
+        ByteData crcData = crc.buffer.asByteData(0, 2);
+        int crcFirst = crcData.getUint8(0);
+        int crcLast = crcData.getUint8(1);
+
+        //最终的请求串口实体
+        Uint8List postData = Uint8List.fromList(
+            [i, 0x01, 0x00, 0x00, 0x00, 0x01, crcFirst, crcLast]);
+        dioUtil.post("发送数据post >> $postData");
+        port.write(postData);
+
+      }else if(i==23) {
+        port.write(Uint8List.fromList([0x28, 0x03, 0x00, 0x00, 0x00, 0x02, 0xC3, 0xF2]));
+      }else if(i==24) {
+        port.write(Uint8List.fromList([0x29, 0x03, 0x00, 0x10, 0x00, 0x01, 0x83, 0xE7]));
+      }else if(i==25) {
+        port.write(Uint8List.fromList([0x2A, 0x03, 0x00, 0x08, 0x00, 0x01, 0x03, 0xD3]));
       }
+
     }
+
+    //温湿度区域
+    // port.write(Uint8List.fromList([0x28, 0x03, 0x00, 0x00, 0x00, 0x02, 0xC3, 0xF2]));
+    // port.write(Uint8List.fromList([0x29, 0x03, 0x00, 0x10, 0x00, 0x01, 0x83, 0xE7]));
+    // port.write(Uint8List.fromList([0x2A, 0x03, 0x00, 0x08, 0x00, 0x01, 0x03, 0xD3]));
   }
 
   //请求评价信息
   //5A A5 06 83 00 00 02 00 01 满意++
   //5A A5 06 83 00 00 02 00 02 一般++
   //5A A5 06 83 00 00 02 00 03 不满意++
-  fetchData2(UsbPort port) async {
+  void fetchData2(UsbPort port) async {
     await port.setDTR(true);
     await port.setRTS(true);
     port.setPortParameters(
@@ -363,8 +358,15 @@ class _MyHomePageState extends State<MyHomePage> {
     // print first result and close port.
     // 01 01 01 00 xx xx
     // 地址 功能码 数据长度 数据 CRC校验
+    dioUtil.post("监听【评价串口】数据中...");
     port.inputStream.listen((Uint8List event) {
-      logUtil.log("监听到【评价】数据 >> $event");
+      dioUtil.post("监听到【评价】数据 >> $event");
+      List<String> result = List<String>();
+      event.toList().map((i) {
+        result.add(i.toRadixString(16));
+      });
+      dioUtil.post("转为16进制为 >> $result");
+
       int satisfaction = event[8];
       if (satisfaction == 0x01) {
         smileNum += smileNum;
@@ -379,11 +381,56 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
+  doReqData() {
+    //请求每个坑位的使用情况
+    dioUtil.post("准备向【坑位串口】发送请求...");
+
+    while(true) {
+      print("[doReqData]");
+      sleep(Duration(milliseconds: 200));
+      if(this.receiveAndSendPort != null) {
+        for (var i = 1; i <= 25; i++) {
+          sleep(Duration(milliseconds: 200));
+          if(i<=22) {
+            Uint8List preData = Uint8List.fromList([i, 0x01, 0x00, 0x00, 0x00, 0x01]);
+            //crc modbus 校验码
+            int crcResultReverse =
+                ParametricCrc(16, 0x8005, 0xffff, 0x0000).convert(preData);
+            Uint16List crc = Uint16List.fromList([crcResultReverse]);
+
+            ByteData crcData = crc.buffer.asByteData(0, 2);
+            int crcFirst = crcData.getUint8(0);
+            int crcLast = crcData.getUint8(1);
+
+            //最终的请求串口实体
+            Uint8List postData = Uint8List.fromList(
+                [i, 0x01, 0x00, 0x00, 0x00, 0x01, crcFirst, crcLast]);
+            dioUtil.post("发送数据post >> $postData");
+            this.receiveAndSendPort.write(postData);
+
+          }else if(i==23) {
+            this.receiveAndSendPort.write(Uint8List.fromList([0x28, 0x03, 0x00, 0x00, 0x00, 0x02, 0xC3, 0xF2]));
+          }else if(i==24) {
+            this.receiveAndSendPort.write(Uint8List.fromList([0x29, 0x03, 0x00, 0x10, 0x00, 0x01, 0x83, 0xE7]));
+          }else if(i==25) {
+            this.receiveAndSendPort.write(Uint8List.fromList([0x2A, 0x03, 0x00, 0x08, 0x00, 0x01, 0x03, 0xD3]));
+          }
+        }
+      }else {
+        dioUtil.post("没有获取到发送端口");
+      }
+    }
+  }
+
   @override
   void dispose() {
     super.dispose();
-    timer?.cancel();
-    sendTimer?.cancel();
+    if (timer != null) {
+      timer.cancel();
+    }
+    if (usbSerialTimer != null) {
+      usbSerialTimer.cancel();
+    }
   }
 
   double doTop(double _top, BuildContext context) {
@@ -394,27 +441,8 @@ class _MyHomePageState extends State<MyHomePage> {
     return (_left / WW) * MediaQuery.of(context).size.width;
   }
 
-  TimerUtil createTimerUtil(int millisecond, OnTimerTickCallback callback) {
-    timer = TimerUtil();
-    timer.setInterval(millisecond);
-    timer.setOnTimerTickCallback(callback);
-    return timer;
-  }
-
-  getParamModel(BuildContext context) {
-    ParamModel model = ParamModel().of(context);
-    Param _param = model.param;
-    setState(() {
-      this.customTitle = _param.name;
-      this.smileNum = _param.smileNum;
-      this.normalNum = _param.normalNum;
-      this.sadNum = _param.sadNum;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    getParamModel(context);
     return Scaffold(
         body: Stack(
       children: <Widget>[
@@ -424,21 +452,6 @@ class _MyHomePageState extends State<MyHomePage> {
           child: Image.asset(
             "assets/images/background.jpg",
             fit: BoxFit.fill,
-          ),
-        ),
-        Positioned(
-          left: 0,
-          top: 0,
-          child: Container(
-            height: 70,
-            width: MediaQuery.of(context).size.width,
-            child: Center(
-              child: Text(
-                customTitle==null || customTitle=="" ? "羊山湖智慧公厕":customTitle,
-                style: TextStyle(
-                    fontSize: 30, color: Color.fromRGBO(255, 242, 101, 1)),
-              ),
-            ),
           ),
         ),
         /////////////女厕总侧位////////////
@@ -817,7 +830,7 @@ class _MyHomePageState extends State<MyHomePage> {
           left: doLeft(900, context),
           top: doTop(476, context),
           child: Num(
-            number: todayMan.toString(),
+            number: todayFemale.toString(),
           ),
         ),
         /////////////////// 当前时间 ////////////////
@@ -844,22 +857,12 @@ class _MyHomePageState extends State<MyHomePage> {
           child: Offstage(offstage: !download, child: Text(progress)),
         ),
         Positioned(
-            left: 0,
-            top: 0,
+          left: 1,
+          top: 1,
             child: FlatButton(
-              onPressed: openUsbPorts,
-              child: Text(""),
-            )),
-        Positioned(
-            left: MediaQuery.of(context).size.width - 50,
-            top: 15,
-            child: InkWell(
-              onTap: () => Navigator.pushNamed(context, "/setting"),
-              child: Icon(
-                Icons.settings,
-                color: Colors.white70,
-              ),
-            )),
+          onPressed: openUsbPorts,
+          child: Text("点击重新获取USB"),
+        ))
       ],
     ));
   }
