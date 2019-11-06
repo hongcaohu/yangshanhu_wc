@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flustars/flustars.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:scoped_model/scoped_model.dart';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:yangshanhu_wc/model/ParamModel.dart';
@@ -13,13 +15,48 @@ import 'package:yangshanhu_wc/utils/logUtil.dart';
 import 'components/num.dart';
 import 'components/sizedImage.dart';
 
+var config;
+LogUtils logUtil = new LogUtils();
 void main() async {
   await SpUtil.getInstance();
+  config = await readJSON();
+  if (config != null) {
+    if (config['smileNum'] != 0 && config['smileNum'] != null) {
+      SpUtil.putInt("smileNum", config['smileNum']);
+    }
+    if (config['normalNum'] != 0 && config['normalNum'] != null) {
+      SpUtil.putInt("normalNum", config['normalNum']);
+    }
+    if (config['sadNum'] != 0 && config['sadNum'] != null) {
+      SpUtil.putInt("sadNum", config['sadNum']);
+    }
+  }
   runApp(MyApp());
 }
 
+// 读取 json 数据
+readJSON() async {
+  try {
+    final file = new File(await localPath());
+    String str = await file.readAsString();
+    logUtil.log("读取到config: $str");
+    return json.decode(str);
+  } catch (err) {
+    logUtil.log(err.toString());
+  }
+}
+
+localPath() async {
+  try {
+    var sdDir = await getExternalStorageDirectory();
+    return sdDir.path + "/sywl_config.json";
+  } catch (err) {
+    logUtil.log(err.toString());
+  }
+}
+
 class MyApp extends StatelessWidget {
-  ParamModel paramModel = ParamModel();
+  final ParamModel paramModel = ParamModel();
 
   @override
   Widget build(BuildContext context) {
@@ -63,8 +100,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   String date = "";
   String time = "";
-
-  LogUtils logUtil = new LogUtils();
 
   List<bool> bools = [
     false,
@@ -190,9 +225,23 @@ class _MyHomePageState extends State<MyHomePage> {
       timer.startTimer();
     }
 
-    sendTimer = createTimerUtil(5000, (i) {
-      reqSerialData();
+    //发送计
+    int sendIndex = 0;
+    sendTimer =
+        createTimerUtil(config != null ? config['askInterval'] : 100, (i) {
+      logUtil.log("sendTimer: 当前sendIndex: $sendIndex, sendPort: $sendPort");
+      if (sendPort != null) {
+        logUtil.log("请求串口数据: ${commands[sendIndex]}");
+        sendPort.write(commands[sendIndex]).then((value) {
+          if (sendIndex == 24) {
+            sendIndex = 0;
+          } else {
+            sendIndex++;
+          }
+        });
+      }
     });
+
     //启动定时器
     if (sendTimer != null) {
       sendTimer.startTimer();
@@ -220,60 +269,49 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void openUsbPorts() async {
     this.usbPorts = List<UsbPort>(); //清零
+    this.serialDevices = List<UsbDevice>();//清零
     this.devices = await UsbSerial.listDevices();
 
     print("获取到devices个数: ${devices.length},  详细: $devices");
     logUtil.log("获取到devices个数: ${devices.length},  详细: $devices");
-    this.devices.forEach((d) async {
+    this.devices.forEach((d) {
       if (!d.productName.toLowerCase().contains('mouse')) {
         logUtil.log("遍历获取到的device: $d");
         this.serialDevices.add(d);
-
-        UsbPort _port = await d.create();
-        bool openResult = await _port.open();
-        if (!openResult) {
-          print("打开port 失败,设备：$d");
-          logUtil.log("打开port 失败,设备: $d");
-        } else {
-          this.usbPorts.add(_port);
-        }
       }
     });
-
-    //3秒钟后启动处理程序
-    Future.delayed(Duration(milliseconds: 3000), () {
+    Future.delayed(Duration(milliseconds: 3000), (){
       fetchData();
     });
   }
 
   void fetchData() {
-    print("处理获取到成功打开的端口列表， Port长度: ${usbPorts.length}, 详细: $usbPorts");
-    logUtil.log("处理获取到成功打开的端口列表， Port长度: ${usbPorts.length}, 详细: $usbPorts");
+    print("当前连接的USB设备个数: ${serialDevices.length}, 详细: $serialDevices");
+    logUtil.log("当前连接的USB设备个数: ${serialDevices.length}, 详细: $serialDevices");
     if (this.serialDevices.length == 0) {
       return;
     }
     UsbDevice device;
     String dKey;
-    logUtil.log(
-        "kengweiUsbValue: ${SpUtil.getString("kengweiUsbValue")}, pingjiaUsbValue: ${SpUtil.getString("pingjiaUsbValue")}");
+    var kengweiUsb = config != null ? config["kengweiUsb"] : "";
+    var pingjiaUsb = config != null ? config["pingjiaUsb"] : "";
+
+    logUtil.log("kengweiUsb: $kengweiUsb , pingjiaUsb: $pingjiaUsb");
     for (int i = 0; i < serialDevices.length; i++) {
-      device = serialDevices[0];
+      device = serialDevices[i];
       dKey = "${device.vid}-${device.pid}";
-      if (dKey == SpUtil.getString("kengweiUsbValue")) {
+      logUtil.log("获取第${i+1} 个设备， dKey: $dKey, kengweiUsb: $kengweiUsb , pingjiaUsb: $pingjiaUsb");
+      logUtil.log("执行 dKey == kengweiUsb: ${dKey == kengweiUsb}");
+      if (dKey == kengweiUsb) {
         //坑位usb
         logUtil.log("获取坑位USB, device: $device");
         fetchData1(device);
-      } else if (dKey == SpUtil.getString("pingjiaUsbValue")) {
+      } else if (dKey == pingjiaUsb) {
         //评价usb
         logUtil.log("获取评价USB, device: $device");
         fetchData2(device);
       }
     }
-
-    // if (this.serialDevices.length >= 2) {
-    //   UsbDevice device = serialDevices[1];
-    //   fetchData2(device);
-    // }
   }
 
   //请求坑位信息
@@ -285,11 +323,12 @@ class _MyHomePageState extends State<MyHomePage> {
       logUtil.log("打开port 失败,设备: $d");
       return;
     }
+    //设置发送端口
+    sendPort = port;
     await port.setDTR(true);
     await port.setRTS(true);
     port.setPortParameters(
         9600, UsbPort.DATABITS_8, UsbPort.STOPBITS_1, UsbPort.PARITY_NONE);
-    //port.sendReq();
 
     // print first result and close port.
     // 01 01 01 00 xx xx
@@ -358,18 +397,6 @@ class _MyHomePageState extends State<MyHomePage> {
     //   await port.write(commands[i]);
     //   sleep(Duration(milliseconds: 30));
     // }
-  }
-
-  reqSerialData() {
-    //发送串口请求
-    //port.sendReq();
-    if (sendPort != null) {
-      for (int i = 0; i < commands.length; i++) {
-        print("请求串口数据: ${commands[i]}");
-        sendPort.write(commands[i]);
-        sleep(Duration(milliseconds: 30));
-      }
-    }
   }
 
   //请求评价信息
@@ -443,7 +470,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    getParamModel(context);
+    //getParamModel(context);
     return Scaffold(
         body: Stack(
       children: <Widget>[
@@ -463,9 +490,9 @@ class _MyHomePageState extends State<MyHomePage> {
             width: MediaQuery.of(context).size.width,
             child: Center(
               child: Text(
-                customTitle == null || customTitle == ""
-                    ? "羊山湖智慧公厕"
-                    : customTitle,
+                config != null && config['name'] != null && config['name'] != ""
+                    ? config['name']
+                    : "羊山湖智慧公厕",
                 style: TextStyle(
                     fontSize: 30, color: Color.fromRGBO(255, 242, 101, 1)),
               ),
@@ -881,16 +908,16 @@ class _MyHomePageState extends State<MyHomePage> {
               onPressed: openUsbPorts,
               child: Text(""),
             )),
-        Positioned(
-            left: MediaQuery.of(context).size.width - 50,
-            top: 15,
-            child: InkWell(
-              onTap: () => Navigator.pushNamed(context, "/setting"),
-              child: Icon(
-                Icons.settings,
-                color: Colors.white70,
-              ),
-            )),
+        // Positioned(
+        //     left: MediaQuery.of(context).size.width - 50,
+        //     top: 15,
+        //     child: InkWell(
+        //       onTap: () => Navigator.pushNamed(context, "/setting"),
+        //       child: Icon(
+        //         Icons.settings,
+        //         color: Colors.white70,
+        //       ),
+        //     )),
       ],
     ));
   }

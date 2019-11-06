@@ -20,5 +20,8 @@
     
     <!-- 0x1366 / 0x0105: Segger JLink -->
     <usb-device vendor-id="4966" product-id="261" />
+
+    <!-- 0x1A86 / 0x7523 -->
+    <usb-device vendor-id="6790" product-id="29987" />
     
 </resources>
