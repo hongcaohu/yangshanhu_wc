@@ -1,6 +1,7 @@
 import 'package:flustars/flustars.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
+import 'package:usb_serial/usb_serial.dart';
 import 'package:yangshanhu_wc/components/settingItem.dart';
 import 'package:yangshanhu_wc/model/ParamModel.dart';
 import 'package:yangshanhu_wc/model/param.dart';
@@ -19,6 +20,12 @@ class _SettingState extends State<Setting> {
   int normalNum = 0;
   int sadNum = 0;
 
+  String kengweiUsbValue;
+  String pingjiaUsbValue;
+
+  List<DropdownMenuItem> kengweiItemList = new List();
+  List<DropdownMenuItem> pingjiaItemList = new List();
+
   @override
   void initState() {
     super.initState();
@@ -28,6 +35,35 @@ class _SettingState extends State<Setting> {
     normalNum = SpUtil.getInt("normalNum") ?? 0;
     sadNum = SpUtil.getInt("sadNum") ?? 0;
     print(SpUtil.getKeys());
+
+    kengweiUsbValue = SpUtil.getString("kengweiUsbValue");
+    pingjiaUsbValue = SpUtil.getString("pingjiaItemList");
+
+    initItemList();
+  }
+
+  initItemList() async {
+    List<UsbDevice> devices = await UsbSerial.listDevices();
+    if (devices != null && devices.length > 0) {
+      List<DropdownMenuItem> _kengweiItemList = new List();
+      List<DropdownMenuItem> _pingjiaItemList = new List();
+      devices.forEach((d) {
+        if (!d.productName.toLowerCase().contains('mouse')) {
+          _kengweiItemList.add(DropdownMenuItem(
+            child: Text("${d.vid}-${d.pid} ${d.productName}"),
+            value: '${d.vid}-${d.pid}',
+          ));
+          _pingjiaItemList.add(DropdownMenuItem(
+            child: Text("${d.vid}-${d.pid} ${d.productName}"),
+            value: '${d.vid}-${d.pid}',
+          ));
+        }
+      });
+      setState(() {
+        kengweiItemList = _kengweiItemList;
+        pingjiaItemList = _pingjiaItemList;
+      });
+    }
   }
 
   _onChangeName(value) {
@@ -56,6 +92,8 @@ class _SettingState extends State<Setting> {
     SpUtil.putInt('smileNum', smileNum);
     SpUtil.putInt('normalNum', normalNum);
     SpUtil.putInt('sadNum', sadNum);
+    SpUtil.putString('kengweiUsbValue', kengweiUsbValue);
+    SpUtil.putString('pingjiaUsbValue', pingjiaUsbValue);
 
     Param _p = Param(
         name: name ?? "",
@@ -105,7 +143,7 @@ class _SettingState extends State<Setting> {
         )
       ]),
       body: SingleChildScrollView(
-              child: Container(
+        child: Container(
             padding: const EdgeInsets.all(30),
             child: Column(
               children: <Widget>[
@@ -142,6 +180,60 @@ class _SettingState extends State<Setting> {
                   keyType: TextInputType.number,
                   inputText: '$sadNum',
                   onChange: _onChangeSadNum,
+                ),
+                Container(
+                  margin: EdgeInsets.only(bottom: 30),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        flex: 1,
+                        child: Text(
+                          "坑位端口",
+                          style: TextStyle(fontSize: 20),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 5,
+                        child: DropdownButton(
+                          hint: Text('下拉选择一个USB端口'),
+                          value: kengweiUsbValue,
+                          items: kengweiItemList,
+                          onChanged: (v) {
+                            setState(() {
+                              kengweiUsbValue = v;
+                            });
+                          },
+                        ),
+                      )
+                    ],
+                  ),
+                ),
+                Container(
+                  margin: EdgeInsets.only(bottom: 30),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        flex: 1,
+                        child: Text(
+                          "评价端口",
+                          style: TextStyle(fontSize: 20),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 5,
+                        child: DropdownButton(
+                          hint: Text('下拉选择一个USB端口'),
+                          value: pingjiaUsbValue,
+                          items: pingjiaItemList,
+                          onChanged: (v) {
+                            setState(() {
+                              pingjiaUsbValue = v;
+                            });
+                          },
+                        ),
+                      )
+                    ],
+                  ),
                 ),
               ],
             )),

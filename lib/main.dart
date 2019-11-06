@@ -227,6 +227,8 @@ class _MyHomePageState extends State<MyHomePage> {
     this.devices.forEach((d) async {
       if (!d.productName.toLowerCase().contains('mouse')) {
         logUtil.log("遍历获取到的device: $d");
+        this.serialDevices.add(d);
+
         UsbPort _port = await d.create();
         bool openResult = await _port.open();
         if (!openResult) {
@@ -247,22 +249,42 @@ class _MyHomePageState extends State<MyHomePage> {
   void fetchData() {
     print("处理获取到成功打开的端口列表， Port长度: ${usbPorts.length}, 详细: $usbPorts");
     logUtil.log("处理获取到成功打开的端口列表， Port长度: ${usbPorts.length}, 详细: $usbPorts");
-    if (usbPorts.length == 0) {
+    if (this.serialDevices.length == 0) {
       return;
     }
-    sendPort = usbPorts[0];
-
-    //默认第一个port为坑位发送端口
-    fetchData1(sendPort);
-
-    if (usbPorts.length >= 2) {
-      UsbPort _port = usbPorts[1];
-      fetchData2(_port);
+    UsbDevice device;
+    String dKey;
+    logUtil.log(
+        "kengweiUsbValue: ${SpUtil.getString("kengweiUsbValue")}, pingjiaUsbValue: ${SpUtil.getString("pingjiaUsbValue")}");
+    for (int i = 0; i < serialDevices.length; i++) {
+      device = serialDevices[0];
+      dKey = "${device.vid}-${device.pid}";
+      if (dKey == SpUtil.getString("kengweiUsbValue")) {
+        //坑位usb
+        logUtil.log("获取坑位USB, device: $device");
+        fetchData1(device);
+      } else if (dKey == SpUtil.getString("pingjiaUsbValue")) {
+        //评价usb
+        logUtil.log("获取评价USB, device: $device");
+        fetchData2(device);
+      }
     }
+
+    // if (this.serialDevices.length >= 2) {
+    //   UsbDevice device = serialDevices[1];
+    //   fetchData2(device);
+    // }
   }
 
   //请求坑位信息
-  fetchData1(UsbPort port) async {
+  fetchData1(UsbDevice d) async {
+    UsbPort port = await d.create();
+    bool openResult = await port.open();
+    if (!openResult) {
+      print("打开port 失败,设备：$d");
+      logUtil.log("打开port 失败,设备: $d");
+      return;
+    }
     await port.setDTR(true);
     await port.setRTS(true);
     port.setPortParameters(
@@ -354,7 +376,14 @@ class _MyHomePageState extends State<MyHomePage> {
   //5A A5 06 83 00 00 02 00 01 满意++
   //5A A5 06 83 00 00 02 00 02 一般++
   //5A A5 06 83 00 00 02 00 03 不满意++
-  fetchData2(UsbPort port) async {
+  fetchData2(UsbDevice d) async {
+    UsbPort port = await d.create();
+    bool openResult = await port.open();
+    if (!openResult) {
+      print("打开port 失败,设备：$d");
+      logUtil.log("打开port 失败,设备: $d");
+      return;
+    }
     await port.setDTR(true);
     await port.setRTS(true);
     port.setPortParameters(
@@ -434,7 +463,9 @@ class _MyHomePageState extends State<MyHomePage> {
             width: MediaQuery.of(context).size.width,
             child: Center(
               child: Text(
-                customTitle==null || customTitle=="" ? "羊山湖智慧公厕":customTitle,
+                customTitle == null || customTitle == ""
+                    ? "羊山湖智慧公厕"
+                    : customTitle,
                 style: TextStyle(
                     fontSize: 30, color: Color.fromRGBO(255, 242, 101, 1)),
               ),
