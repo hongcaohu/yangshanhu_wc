@@ -3,7 +3,7 @@ import 'package:flutter/widgets.dart';
 
 class Num extends StatelessWidget {
 
-  Num({ Key key, this.number, this.size=18}) : super(key: key);
+  Num({ Key key, this.number, this.size=20}) : super(key: key);
 
   final String number;
   final double size;

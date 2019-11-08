@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:scoped_model/scoped_model.dart';
 import 'package:usb_serial/usb_serial.dart';
+import 'package:yangshanhu_wc/components/cewei.dart';
+import 'package:yangshanhu_wc/components/timerWidget.dart';
 import 'package:yangshanhu_wc/model/ParamModel.dart';
 import 'package:yangshanhu_wc/model/param.dart';
 import 'package:yangshanhu_wc/ui/setting.dart';
@@ -20,17 +22,6 @@ LogUtils logUtil = new LogUtils();
 void main() async {
   await SpUtil.getInstance();
   config = await readJSON();
-  if (config != null) {
-    if (config['smileNum'] != 0 && config['smileNum'] != null) {
-      SpUtil.putInt("smileNum", config['smileNum']);
-    }
-    if (config['normalNum'] != 0 && config['normalNum'] != null) {
-      SpUtil.putInt("normalNum", config['normalNum']);
-    }
-    if (config['sadNum'] != 0 && config['sadNum'] != null) {
-      SpUtil.putInt("sadNum", config['sadNum']);
-    }
-  }
   runApp(MyApp());
 }
 
@@ -38,9 +29,26 @@ void main() async {
 readJSON() async {
   try {
     final file = new File(await localPath());
-    String str = await file.readAsString();
-    logUtil.log("读取到config: $str");
-    return json.decode(str);
+    bool isExist = await file.exists();
+    print("file isExist: $isExist");
+    if (!isExist) {
+      await file.create(recursive: true);
+      String content =
+          "{\"name\":\"羊山湖智慧公厕\",\"smileNum\":0,\"normalNum\":0,\"sadNum\":0,\"askInterval\":100,\"sync\":false}";
+      print("file content: $content");
+      await file.writeAsString(content);
+      return json.decode(content);
+    } else {
+      String str = await file.readAsString();
+      logUtil.log("读取到config: $str");
+      print("读取到config: $str");
+      var _config = json.decode(str);
+      if (_config['sync']) {
+        _config['sync'] = false;
+      }
+      await file.writeAsString(json.encode(_config));
+      return json.decode(str);
+    }
   } catch (err) {
     logUtil.log(err.toString());
   }
@@ -63,7 +71,7 @@ class MyApp extends StatelessWidget {
     return ScopedModel<ParamModel>(
       model: paramModel,
       child: MaterialApp(
-        title: 'Flutter Demo',
+        title: 'Sywl',
         theme: ThemeData(
           primarySwatch: Colors.blue,
         ),
@@ -147,7 +155,7 @@ class _MyHomePageState extends State<MyHomePage> {
   double nhData = 0.0;
   int pmData = 0;
 
-  String customTitle;
+  Stream<Uint8List> inputStream;
 
   List<UsbDevice> devices = [];
   List<UsbPort> usbPorts = List<UsbPort>();
@@ -185,6 +193,9 @@ class _MyHomePageState extends State<MyHomePage> {
     Uint8List.fromList([0x2A, 0x03, 0x00, 0x08, 0x00, 0x01, 0x03, 0xD3])
   ];
 
+  bool testFlag = false;
+  bool isReturned = false;
+
   // 1-14 是女厕
   // 15-20 是男厕
   // 21-22 残疾人位
@@ -197,29 +208,21 @@ class _MyHomePageState extends State<MyHomePage> {
     todayFemale = SpUtil.getInt("todayFemale") ?? 0;
     todayMan = SpUtil.getInt("todayMan") ?? 0;
 
-    smileNum = SpUtil.getInt("smileNum") ?? 0;
-    normalNum = SpUtil.getInt("normalNum") ?? 0;
-    sadNum = SpUtil.getInt("sadNum") ?? 0;
+    //需要同步评价数量
+    if (config != null && config['sync']) {
+      smileNum = config['smileNum'];
+      normalNum = config['normalNum'];
+      sadNum = config['sadNum'];
 
-    // String name = SpUtil.getString("name");
-    // customTitle = (name==""||name==null) ? "羊山湖智慧厕所" : name;
+      SpUtil.putInt("smileNum", smileNum);
+      SpUtil.putInt("normalNum", normalNum);
+      SpUtil.putInt("sadNum", sadNum);
+    } else {
+      smileNum = SpUtil.getInt("smileNum") ?? 0;
+      normalNum = SpUtil.getInt("normalNum") ?? 0;
+      sadNum = SpUtil.getInt("sadNum") ?? 0;
+    }
 
-    //开始初始化定时器
-    timer = createTimerUtil(1000, (i) {
-      setState(() {
-        this.date =
-            DateUtil.formatDate(DateTime.now(), format: DataFormats.zh_y_mo_d);
-        this.time =
-            DateUtil.formatDate(DateTime.now(), format: DataFormats.h_m_s);
-        //零点清空男女厕今日汇总数据
-        if (this.time == "00:00:00") {
-          this.todayFemale = 0;
-          this.todayMan = 0;
-          SpUtil.putInt("todayFemale", 0);
-          SpUtil.putInt("todayMan", 0);
-        }
-      });
-    });
     //启动定时器
     if (timer != null) {
       timer.startTimer();
@@ -229,7 +232,6 @@ class _MyHomePageState extends State<MyHomePage> {
     int sendIndex = 0;
     sendTimer =
         createTimerUtil(config != null ? config['askInterval'] : 100, (i) {
-      logUtil.log("sendTimer: 当前sendIndex: $sendIndex, sendPort: $sendPort");
       if (sendPort != null) {
         logUtil.log("请求串口数据: ${commands[sendIndex]}");
         sendPort.write(commands[sendIndex]).then((value) {
@@ -269,49 +271,45 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void openUsbPorts() async {
     this.usbPorts = List<UsbPort>(); //清零
-    this.serialDevices = List<UsbDevice>();//清零
+    this.serialDevices = List<UsbDevice>(); //清零
     this.devices = await UsbSerial.listDevices();
 
     print("获取到devices个数: ${devices.length},  详细: $devices");
     logUtil.log("获取到devices个数: ${devices.length},  详细: $devices");
     this.devices.forEach((d) {
-      if (!d.productName.toLowerCase().contains('mouse')) {
+      if (!d.productName.toLowerCase().contains('mouse') &&
+          !d.productName.toLowerCase().contains('keyboard')) {
         logUtil.log("遍历获取到的device: $d");
         this.serialDevices.add(d);
       }
     });
-    Future.delayed(Duration(milliseconds: 3000), (){
-      fetchData();
-    });
+    fetchData();
   }
 
-  void fetchData() {
+  void fetchData() async {
     print("当前连接的USB设备个数: ${serialDevices.length}, 详细: $serialDevices");
     logUtil.log("当前连接的USB设备个数: ${serialDevices.length}, 详细: $serialDevices");
     if (this.serialDevices.length == 0) {
       return;
     }
-    UsbDevice device;
-    String dKey;
-    var kengweiUsb = config != null ? config["kengweiUsb"] : "";
-    var pingjiaUsb = config != null ? config["pingjiaUsb"] : "";
 
-    logUtil.log("kengweiUsb: $kengweiUsb , pingjiaUsb: $pingjiaUsb");
-    for (int i = 0; i < serialDevices.length; i++) {
-      device = serialDevices[i];
-      dKey = "${device.vid}-${device.pid}";
-      logUtil.log("获取第${i+1} 个设备， dKey: $dKey, kengweiUsb: $kengweiUsb , pingjiaUsb: $pingjiaUsb");
-      logUtil.log("执行 dKey == kengweiUsb: ${dKey == kengweiUsb}");
-      if (dKey == kengweiUsb) {
-        //坑位usb
-        logUtil.log("获取坑位USB, device: $device");
-        fetchData1(device);
-      } else if (dKey == pingjiaUsb) {
-        //评价usb
-        logUtil.log("获取评价USB, device: $device");
-        fetchData2(device);
-      }
+    UsbDevice device1 = this.serialDevices[0];
+    fetchData1(device1);
+  }
+
+  getPort(UsbDevice d) async {
+    UsbPort port = await d.create();
+    bool openResult = await port.open();
+    if (!openResult) {
+      print("打开port 失败,设备：$d");
+      logUtil.log("打开port 失败,设备: $d");
+      return null;
     }
+    await port.setDTR(true);
+    await port.setRTS(true);
+    port.setPortParameters(
+        9600, UsbPort.DATABITS_8, UsbPort.STOPBITS_1, UsbPort.PARITY_NONE);
+    return port;
   }
 
   //请求坑位信息
@@ -330,73 +328,64 @@ class _MyHomePageState extends State<MyHomePage> {
     port.setPortParameters(
         9600, UsbPort.DATABITS_8, UsbPort.STOPBITS_1, UsbPort.PARITY_NONE);
 
+    setState(() {
+      inputStream = port.inputStream;
+    });
+
     // print first result and close port.
     // 01 01 01 00 xx xx
     // 地址 功能码 数据长度 数据 CRC校验
-    port.inputStream.listen((event) {
-      print("监听到【坑位串口】传来的数据, event >> $event");
-      logUtil.log("监听到【坑位串口】传来的数据: " + event.toString());
-      if (event.length != 6) {
-        return;
-      }
-      int useFlag = event[3];
-      int address = event[0];
-      setState(() {
-        //女厕位
-        if (address <= 14) {
-          //女厕位
-          if (useFlag == 0x01 && !this.bools[address - 1]) {
-            this.femaleUsing++;
-            this.todayFemale++;
-            //保存今日女厕总人数
-            SpUtil.putInt("todayFemale", todayFemale);
-          } else if (useFlag != 0x01 && this.bools[address - 1]) {
-            this.femaleUsing--;
-          }
-        } else if (address <= 20) {
-          //男厕位
-          if (useFlag == 0x01 && !this.bools[address - 1]) {
-            this.manUsing++;
-            this.todayMan++;
-            //保存今日男厕总人数
-            SpUtil.putInt("todayMan", todayMan);
-          } else if (useFlag != 0x01 && this.bools[address - 1]) {
-            this.manUsing--;
-          }
-        } else if (address <= 22) {
-          //残疾厕位
-          if (useFlag == 0x01 && !this.bools[address - 1]) {
-            this.canjiUsing = this.canjiUsing + 1;
-          } else if (useFlag != 0x01 && this.bools[address - 1]) {
-            this.canjiUsing--;
-          }
-        }
-        this.bools[address - 1] = useFlag == 0x01 ? true : false;
-        this.bools = List.from(bools);
+    // port.inputStream.listen((event) {
+    //   print("监听到【串口】传来的数据, event >> $event");
+    //   logUtil.log("监听到【串口】传来的数据: " + event.toString());
+    //   int address = event[0];
 
-        // 01 01 01 00 xx xx
-        // 地址 功能码 数据长度 数据 CRC校验
-        //温湿度
-        ByteData dataBuffer = event.buffer.asByteData(0, event.length);
-        if (address == 0x28) {
-          this.tempData = dataBuffer.getUint16(3) / 10;
-          this.humData = dataBuffer.getUint16(5) / 10;
-        } else if (address == 0x29) {
-          //氨气
-          this.nhData = dataBuffer.getUint16(3) / 10;
-        } else if (address == 0x2A) {
-          //空气质量
-          this.pmData = dataBuffer.getUint16(3);
-        }
-      });
-    });
-    //发送串口请求
-    //port.sendReq();
-    // for (int i = 0; i < commands.length; i++) {
-    //   print("请求数据: ${commands[i]}");
-    //   await port.write(commands[i]);
-    //   sleep(Duration(milliseconds: 30));
-    // }
+    //   if (event.length == 6 && address >= 1 && address <= 22) {
+    //     int useFlag = event[3];
+    //     this.bools[address - 1] = useFlag == 0x01 ? true : false;
+    //     //女厕位
+    //     if (address <= 14) {
+    //       //女厕位
+    //       if (useFlag == 0x01 && !this.bools[address - 1]) {
+    //         setState(() {
+    //           this.femaleUsing++;
+    //           this.todayFemale++;
+    //         });
+    //         //保存今日女厕总人数
+    //         SpUtil.putInt("todayFemale", todayFemale);
+    //       } else if (useFlag != 0x01 && this.bools[address - 1]) {
+    //         setState(() {
+    //           this.femaleUsing--;
+    //         });
+    //       }
+    //     } else if (address <= 20) {
+    //       //男厕位
+    //       if (useFlag == 0x01 && !this.bools[address - 1]) {
+    //         setState(() {
+    //           this.manUsing++;
+    //           this.todayMan++;
+    //         });
+    //         //保存今日男厕总人数
+    //         SpUtil.putInt("todayMan", todayMan);
+    //       } else if (useFlag != 0x01 && this.bools[address - 1]) {
+    //         setState(() {
+    //           this.manUsing--;
+    //         });
+    //       }
+    //     } else if (address <= 22) {
+    //       //残疾厕位
+    //       if (useFlag == 0x01 && !this.bools[address - 1]) {
+    //         setState(() {
+    //           this.canjiUsing++;
+    //         });
+    //       } else if (useFlag != 0x01 && this.bools[address - 1]) {
+    //         setState(() {
+    //           this.canjiUsing--;
+    //         });
+    //       }
+    //     }
+    //   }
+    // });
   }
 
   //请求评价信息
@@ -423,13 +412,13 @@ class _MyHomePageState extends State<MyHomePage> {
       logUtil.log("监听到【评价】数据 >> $event");
       int satisfaction = event[8];
       if (satisfaction == 0x01) {
-        smileNum += smileNum;
+        smileNum++;
         SpUtil.putInt("smileNum", smileNum);
       } else if (satisfaction == 0x02) {
-        normalNum += normalNum;
+        normalNum++;
         SpUtil.putInt("normalNum", normalNum);
       } else if (satisfaction == 0x03) {
-        sadNum += sadNum;
+        sadNum++;
         SpUtil.putInt("sadNum", sadNum);
       }
     });
@@ -457,19 +446,9 @@ class _MyHomePageState extends State<MyHomePage> {
     return timer;
   }
 
-  getParamModel(BuildContext context) {
-    ParamModel model = ParamModel().of(context);
-    Param _param = model.param;
-    setState(() {
-      this.customTitle = _param.name;
-      this.smileNum = _param.smileNum;
-      this.normalNum = _param.normalNum;
-      this.sadNum = _param.sadNum;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
+    print(">>>>>> main App build");
     //getParamModel(context);
     return Scaffold(
         body: Stack(
@@ -499,425 +478,27 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
           ),
         ),
-        /////////////女厕总侧位////////////
-        Positioned(
-          top: doTop(94, context),
-          left: doLeft(148, context),
-          child: Num(number: femaleTotal.toString()),
-        ),
-        //当前使用
-        Positioned(
-          top: doTop(127, context),
-          left: doLeft(130, context),
-          child: Num(number: femaleUsing.toString()),
-        ),
-        //剩余位
-        Positioned(
-          top: doTop(127, context),
-          left: doLeft(225, context),
-          child: Num(number: (femaleTotal - femaleUsing).toString()),
-        ),
 
         /////////////男厕总侧位/////////////
-        Positioned(
-          top: doTop(172, context),
-          left: doLeft(148, context),
-          child: Num(number: manTotal.toString()),
-        ),
-        //当前使用
-        Positioned(
-          top: doTop(206, context),
-          left: doLeft(130, context),
-          child: Num(number: manUsing.toString()),
-        ),
-        //剩余位
-        Positioned(
-          top: doTop(206, context),
-          left: doLeft(225, context),
-          child: Num(number: (manTotal - manUsing).toString()),
-        ),
-
-        /////////////残疾人总侧位/////////////
-        Positioned(
-          top: doTop(245, context),
-          left: doLeft(165, context),
-          child: Num(number: canjiTotal.toString()),
-        ),
-        //当前使用
-        Positioned(
-          top: doTop(279, context),
-          left: doLeft(130, context),
-          child: Num(number: canjiUsing.toString()),
-        ),
-        //剩余位
-        Positioned(
-          top: doTop(279, context),
-          left: doLeft(225, context),
-          child: Num(number: (canjiTotal - canjiUsing).toString()),
-        ),
-
-        /////////////左下角///////////////////
-        //温度
-        Positioned(
-          top: doTop(354, context),
-          left: doLeft(180, context),
-          child: Num(
-            number: this.tempData.toString() + " ℃",
-          ),
-        ),
-        //湿度
-        Positioned(
-          top: doTop(392, context),
-          left: doLeft(190, context),
-          child: Num(
-            number: this.humData.toString() + " %",
-          ),
-        ),
-        //氨气
-        Positioned(
-          top: doTop(432, context),
-          left: doLeft(180, context),
-          child: Num(
-            number: this.nhData.toString() + " ppm",
-          ),
-        ),
-        //空气质量
-        Positioned(
-          top: doTop(472, context),
-          left: doLeft(180, context),
-          child: Num(
-            number: "PM2.5: " + this.pmData.toString(),
-          ),
-        ),
-
-        //////////// 中间的侧位 ///////////
-        Positioned(
-          left: doLeft(339, context),
-          top: doTop(168, context),
-          child: bools[0]
-              ? SizeImage(
-                  url: red,
-                )
-              : SizeImage(),
-        ),
         //f2
         Positioned(
-          left: doLeft(375, context),
-          top: doTop(168, context),
-          child: bools[1]
-              ? SizeImage(
-                  url: red,
-                )
-              : SizeImage(),
-        ),
-        //f3
-        Positioned(
-          left: doLeft(411, context),
-          top: doTop(168, context),
-          child: bools[2]
-              ? SizeImage(
-                  url: red,
-                )
-              : SizeImage(),
-        ),
-        //f4
-        Positioned(
-          left: doLeft(450, context),
-          top: doTop(168, context),
-          child: bools[3]
-              ? SizeImage(
-                  url: red,
-                )
-              : SizeImage(),
-        ),
-        //f5
-        Positioned(
-          left: doLeft(493, context),
-          top: doTop(168, context),
-          child: bools[4]
-              ? SizeImage(
-                  url: red,
-                )
-              : SizeImage(),
-        ),
-        //f6
-        Positioned(
-          left: doLeft(529, context),
-          top: doTop(168, context),
-          child: bools[5]
-              ? SizeImage(
-                  url: red,
-                )
-              : SizeImage(),
-        ),
-
-        Positioned(
-          left: doLeft(570, context),
-          top: doTop(168, context),
-          child: bools[14]
-              ? SizeImage(
-                  url: red,
-                )
-              : SizeImage(),
-        ),
-        Positioned(
-          left: doLeft(606, context),
-          top: doTop(168, context),
-          child: bools[15]
-              ? SizeImage(
-                  url: red,
-                )
-              : SizeImage(),
-        ),
-        Positioned(
-          left: doLeft(641, context),
-          top: doTop(168, context),
-          child: bools[16]
-              ? SizeImage(
-                  url: red,
-                )
-              : SizeImage(),
-        ),
-
-        ///////////// 第二排 /////////////
-        Positioned(
-          left: doLeft(388, context),
-          top: doTop(270, context),
-          child: bools[6]
-              ? SizeImage(
-                  url: red_r,
-                )
-              : SizeImage(
-                  url: green_r,
-                ),
-        ),
-        Positioned(
-          left: doLeft(424, context),
-          top: doTop(270, context),
-          child: bools[7]
-              ? SizeImage(
-                  url: red_r,
-                )
-              : SizeImage(
-                  url: green_r,
-                ),
-        ),
-        Positioned(
-          left: doLeft(459, context),
-          top: doTop(270, context),
-          child: bools[8]
-              ? SizeImage(
-                  url: red_r,
-                )
-              : SizeImage(
-                  url: green_r,
-                ),
-        ),
-        Positioned(
-          left: doLeft(493, context),
-          top: doTop(270, context),
-          child: bools[9]
-              ? SizeImage(
-                  url: red_r,
-                )
-              : SizeImage(
-                  url: green_r,
-                ),
-        ),
-        Positioned(
-          left: doLeft(528, context),
-          top: doTop(270, context),
-          child: bools[10]
-              ? SizeImage(
-                  url: red_r,
-                )
-              : SizeImage(
-                  url: green_r,
-                ),
-        ),
-
-        Positioned(
-          left: doLeft(570, context),
-          top: doTop(270, context),
-          child: bools[17]
-              ? SizeImage(
-                  url: red_r,
-                )
-              : SizeImage(
-                  url: green_r,
-                ),
-        ),
-        Positioned(
-          left: doLeft(605, context),
-          top: doTop(270, context),
-          child: bools[18]
-              ? SizeImage(
-                  url: red_r,
-                )
-              : SizeImage(
-                  url: green_r,
-                ),
-        ),
-        Positioned(
-          left: doLeft(641, context),
-          top: doTop(270, context),
-          child: bools[19]
-              ? SizeImage(
-                  url: red_r,
-                )
-              : SizeImage(
-                  url: green_r,
-                ),
-        ),
-
-        /////////// 第三排 ///////////
-        Positioned(
-          left: doLeft(388, context),
-          top: doTop(328, context),
-          child: bools[11]
-              ? SizeImage(
-                  url: red,
-                )
-              : SizeImage(
-                  url: green,
-                ),
-        ),
-        Positioned(
-          left: doLeft(424, context),
-          top: doTop(328, context),
-          child: bools[12]
-              ? SizeImage(
-                  url: red,
-                )
-              : SizeImage(
-                  url: green,
-                ),
-        ),
-        Positioned(
-          left: doLeft(458, context),
-          top: doTop(328, context),
-          child: bools[13]
-              ? SizeImage(
-                  url: red,
-                )
-              : SizeImage(
-                  url: green,
-                ),
-        ),
-
-        Positioned(
-          left: doLeft(500, context),
-          top: doTop(298, context),
-          child: SizeImage(
-            url:
-                bools[20] ? "assets/images/4_01.png" : "assets/images/3_01.png",
-            width: 30,
-            height: 68,
-          ),
-        ),
-        Positioned(
-          left: doLeft(528, context),
-          top: doTop(304, context),
-          child: SizeImage(
-            url:
-                bools[21] ? "assets/images/4_02.png" : "assets/images/3_02.png",
-            width: 30,
-            height: 58,
-          ),
-        ),
-
-        /////////////// 满意度评价区 /////////////
-        Positioned(
-          left: doLeft(788, context),
-          top: doTop(350, context),
-          child: Num(
-            number: (smileNum + normalNum + sadNum) == 0
-                ? "0.0%"
-                : (smileNum / (smileNum + normalNum + sadNum))
-                        .toStringAsFixed(1) +
-                    "%",
-            size: 12,
-          ),
-        ),
-        Positioned(
-          left: doLeft(843, context),
-          top: doTop(350, context),
-          child: Num(
-            number: (smileNum + normalNum + sadNum) == 0
-                ? "0.0%"
-                : (normalNum / (smileNum + normalNum + sadNum))
-                        .toStringAsFixed(1) +
-                    "%",
-            size: 12,
-          ),
-        ),
-        Positioned(
-          left: doLeft(898, context),
-          top: doTop(350, context),
-          child: Num(
-            number: (smileNum + normalNum + sadNum) == 0
-                ? "0.0%"
-                : (sadNum / (smileNum + normalNum + sadNum))
-                        .toStringAsFixed(1) +
-                    "%",
-            size: 12,
-          ),
-        ),
-        /////////////// 今日客流 /////////////
-        Positioned(
-          left: doLeft(795, context),
-          top: doTop(476, context),
-          child: Num(
-            number: todayFemale.toString(),
-          ),
-        ),
-        Positioned(
-          left: doLeft(900, context),
-          top: doTop(476, context),
-          child: Num(
-            number: todayMan.toString(),
-          ),
-        ),
-        /////////////////// 当前时间 ////////////////
-        Positioned(
-            left: doLeft(790, context),
-            top: doTop(110, context),
-            child: Text(
-              this.date,
-              style: TextStyle(color: Colors.white, fontSize: 18),
+            left: doLeft(339, context),
+            top: doTop(168, context),
+            child: Cewei(
+              redUrl: red,
+              greenUrl: green,
+              inputStream: inputStream,
+              index: 1,
             )),
         Positioned(
-            left: doLeft(788, context),
-            top: doTop(150, context),
-            child: Text(
-              this.time,
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 35,
-                  fontWeight: FontWeight.w500),
+            left: doLeft(375, context),
+            top: doTop(168, context),
+            child: Cewei(
+              redUrl: red,
+              greenUrl: green,
+              inputStream: inputStream,
+              index: 2,
             )),
-        Positioned(
-          left: 1,
-          top: 1,
-          child: Offstage(offstage: !download, child: Text(progress)),
-        ),
-        Positioned(
-            left: 0,
-            top: 0,
-            child: FlatButton(
-              onPressed: openUsbPorts,
-              child: Text(""),
-            )),
-        // Positioned(
-        //     left: MediaQuery.of(context).size.width - 50,
-        //     top: 15,
-        //     child: InkWell(
-        //       onTap: () => Navigator.pushNamed(context, "/setting"),
-        //       child: Icon(
-        //         Icons.settings,
-        //         color: Colors.white70,
-        //       ),
-        //     )),
       ],
     ));
   }
