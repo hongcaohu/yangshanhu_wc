@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:scoped_model/scoped_model.dart';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:yangshanhu_wc/components/cewei.dart';
+import 'package:yangshanhu_wc/components/satisWidget.dart';
 import 'package:yangshanhu_wc/components/timerWidget.dart';
 import 'package:yangshanhu_wc/model/ParamModel.dart';
 import 'package:yangshanhu_wc/model/param.dart';
@@ -106,6 +107,8 @@ class _MyHomePageState extends State<MyHomePage> {
   TimerUtil timer;
   TimerUtil sendTimer;
 
+  Stream<Uint8List> inputStream;
+
   String date = "";
   String time = "";
 
@@ -154,8 +157,6 @@ class _MyHomePageState extends State<MyHomePage> {
   double humData = 0.0;
   double nhData = 0.0;
   int pmData = 0;
-
-  Stream<Uint8List> inputStream;
 
   List<UsbDevice> devices = [];
   List<UsbPort> usbPorts = List<UsbPort>();
@@ -223,6 +224,24 @@ class _MyHomePageState extends State<MyHomePage> {
       sadNum = SpUtil.getInt("sadNum") ?? 0;
     }
 
+    //开始初始化定时器
+    timer = createTimerUtil(1000, (i) {
+      this.date =
+          DateUtil.formatDate(DateTime.now(), format: DataFormats.zh_y_mo_d);
+      this.time =
+          DateUtil.formatDate(DateTime.now(), format: DataFormats.h_m_s);
+      //零点清空男女厕今日汇总数据
+      if (this.time == "00:00:00" ||
+          this.time == "00:00:02" ||
+          this.time == "00:00:03" ||
+          this.time == "00:00:04") {
+        this.todayFemale = 0;
+        this.todayMan = 0;
+        SpUtil.putInt("todayFemale", 0);
+        SpUtil.putInt("todayMan", 0);
+        setState(() {});
+      }
+    });
     //启动定时器
     if (timer != null) {
       timer.startTimer();
@@ -331,61 +350,94 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {
       inputStream = port.inputStream;
     });
-
+    return;
     // print first result and close port.
     // 01 01 01 00 xx xx
     // 地址 功能码 数据长度 数据 CRC校验
-    // port.inputStream.listen((event) {
-    //   print("监听到【串口】传来的数据, event >> $event");
-    //   logUtil.log("监听到【串口】传来的数据: " + event.toString());
-    //   int address = event[0];
+    port.inputStream.listen((event) {
+      print("监听到【串口】传来的数据, event >> $event");
+      logUtil.log("监听到【串口】传来的数据: " + event.toString());
+      int address = event[0];
+      if (event.length == 6 && address >= 1 && address <= 22) {
+        int useFlag = event[3];
 
-    //   if (event.length == 6 && address >= 1 && address <= 22) {
-    //     int useFlag = event[3];
-    //     this.bools[address - 1] = useFlag == 0x01 ? true : false;
-    //     //女厕位
-    //     if (address <= 14) {
-    //       //女厕位
-    //       if (useFlag == 0x01 && !this.bools[address - 1]) {
-    //         setState(() {
-    //           this.femaleUsing++;
-    //           this.todayFemale++;
-    //         });
-    //         //保存今日女厕总人数
-    //         SpUtil.putInt("todayFemale", todayFemale);
-    //       } else if (useFlag != 0x01 && this.bools[address - 1]) {
-    //         setState(() {
-    //           this.femaleUsing--;
-    //         });
-    //       }
-    //     } else if (address <= 20) {
-    //       //男厕位
-    //       if (useFlag == 0x01 && !this.bools[address - 1]) {
-    //         setState(() {
-    //           this.manUsing++;
-    //           this.todayMan++;
-    //         });
-    //         //保存今日男厕总人数
-    //         SpUtil.putInt("todayMan", todayMan);
-    //       } else if (useFlag != 0x01 && this.bools[address - 1]) {
-    //         setState(() {
-    //           this.manUsing--;
-    //         });
-    //       }
-    //     } else if (address <= 22) {
-    //       //残疾厕位
-    //       if (useFlag == 0x01 && !this.bools[address - 1]) {
-    //         setState(() {
-    //           this.canjiUsing++;
-    //         });
-    //       } else if (useFlag != 0x01 && this.bools[address - 1]) {
-    //         setState(() {
-    //           this.canjiUsing--;
-    //         });
-    //       }
-    //     }
-    //   }
-    // });
+        //女厕位
+        if (address <= 14) {
+          //女厕位
+          if (useFlag == 0x01 && !this.bools[address - 1]) {
+            setState(() {
+              this.femaleUsing++;
+              this.todayFemale++;
+            });
+            //保存今日女厕总人数
+            SpUtil.putInt("todayFemale", todayFemale);
+          } else if (useFlag != 0x01 && this.bools[address - 1]) {
+            setState(() {
+              this.femaleUsing--;
+            });
+          }
+        } else if (address <= 20) {
+          //男厕位
+          if (useFlag == 0x01 && !this.bools[address - 1]) {
+            setState(() {
+              this.manUsing++;
+              this.todayMan++;
+            });
+            //保存今日男厕总人数
+            SpUtil.putInt("todayMan", todayMan);
+          } else if (useFlag != 0x01 && this.bools[address - 1]) {
+            setState(() {
+              this.manUsing--;
+            });
+          }
+        } else if (address <= 22) {
+          //残疾厕位
+          if (useFlag == 0x01 && !this.bools[address - 1]) {
+            setState(() {
+              this.canjiUsing++;
+            });
+          } else if (useFlag != 0x01 && this.bools[address - 1]) {
+            setState(() {
+              this.canjiUsing--;
+            });
+          }
+        }
+        this.bools[address - 1] = useFlag == 0x01 ? true : false;
+      } else if (address == 0x28) {
+        int _hum = event[3] * 256 + event[4];
+        int _temp = event[5] * 256 + event[6];
+        logUtil.log("temp, hum: $_temp, $_hum");
+        setState(() {
+          this.tempData = _temp / 10;
+          this.humData = _hum / 10;
+        });
+      } else if (address == 0x29) {
+        //氨气
+        setState(() {
+          this.nhData = (event[3] * 256 + event[4]) / 10;
+        });
+      } else if (address == 0x2A) {
+        //空气质量
+        setState(() {
+          this.pmData = event[3] * 256 + event[4];
+        });
+      } else if (event.length == 9 && event[0] == 0x5A && event[1] == 0xA5) {
+        logUtil.log("监听到【评价】数据 >> $event");
+        int satisfaction = event[8];
+        setState(() {
+          if (satisfaction == 0x01) {
+            this.smileNum++;
+            SpUtil.putInt("smileNum", smileNum);
+          } else if (satisfaction == 0x02) {
+            this.normalNum++;
+            SpUtil.putInt("normalNum", normalNum);
+          } else if (satisfaction == 0x03) {
+            this.sadNum++;
+            SpUtil.putInt("sadNum", sadNum);
+          }
+        });
+      }
+    });
   }
 
   //请求评价信息
@@ -446,6 +498,16 @@ class _MyHomePageState extends State<MyHomePage> {
     return timer;
   }
 
+  getParamModel(BuildContext context) {
+    ParamModel model = ParamModel().of(context);
+    Param _param = model.param;
+    setState(() {
+      this.smileNum = _param.smileNum;
+      this.normalNum = _param.normalNum;
+      this.sadNum = _param.sadNum;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     print(">>>>>> main App build");
@@ -478,27 +540,421 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
           ),
         ),
+        /////////////女厕总侧位////////////
+        Positioned(
+          top: doTop(94, context),
+          left: doLeft(148, context),
+          child: Num(number: femaleTotal.toString()),
+        ),
+        //当前使用
+        Positioned(
+          top: doTop(127, context),
+          left: doLeft(130, context),
+          child: Num(number: femaleUsing.toString()),
+        ),
+        //剩余位
+        Positioned(
+          top: doTop(127, context),
+          left: doLeft(225, context),
+          child: Num(number: (femaleTotal - femaleUsing).toString()),
+        ),
 
         /////////////男厕总侧位/////////////
+        Positioned(
+          top: doTop(172, context),
+          left: doLeft(148, context),
+          child: Num(number: manTotal.toString()),
+        ),
+        //当前使用
+        Positioned(
+          top: doTop(206, context),
+          left: doLeft(130, context),
+          child: Num(number: manUsing.toString()),
+        ),
+        //剩余位
+        Positioned(
+          top: doTop(206, context),
+          left: doLeft(225, context),
+          child: Num(number: (manTotal - manUsing).toString()),
+        ),
+
+        /////////////残疾人总侧位/////////////
+        Positioned(
+          top: doTop(245, context),
+          left: doLeft(165, context),
+          child: Num(number: canjiTotal.toString()),
+        ),
+        //当前使用
+        Positioned(
+          top: doTop(279, context),
+          left: doLeft(130, context),
+          child: Num(number: canjiUsing.toString()),
+        ),
+        //剩余位
+        Positioned(
+          top: doTop(279, context),
+          left: doLeft(225, context),
+          child: Num(number: (canjiTotal - canjiUsing).toString()),
+        ),
+
+        /////////////左下角///////////////////
+        //温度
+        Positioned(
+          top: doTop(354, context),
+          left: doLeft(180, context),
+          child: Num(
+            number: this.tempData.toString() + " ℃",
+          ),
+        ),
+        //湿度
+        Positioned(
+          top: doTop(392, context),
+          left: doLeft(190, context),
+          child: Num(
+            number: this.humData.toString() + " %",
+          ),
+        ),
+        //氨气
+        Positioned(
+          top: doTop(432, context),
+          left: doLeft(180, context),
+          child: Num(
+            number: this.nhData.toString() + " ppm",
+          ),
+        ),
+        //空气质量
+        Positioned(
+          top: doTop(472, context),
+          left: doLeft(180, context),
+          child: Num(
+            number: "PM2.5: " + this.pmData.toString(),
+          ),
+        ),
+
+        //////////// 中间的侧位 ///////////
+        Positioned(
+          left: doLeft(339, context),
+          top: doTop(168, context),
+          child: Cewei(
+            index: 1,
+            redUrl: red,
+            greenUrl: green,
+            inputStream: inputStream,
+          ),
+        ),
         //f2
         Positioned(
-            left: doLeft(339, context),
-            top: doTop(168, context),
-            child: Cewei(
-              redUrl: red,
-              greenUrl: green,
-              inputStream: inputStream,
-              index: 1,
-            )),
+          left: doLeft(375, context),
+          top: doTop(168, context),
+          child: Cewei(
+            index: 2,
+            redUrl: red,
+            greenUrl: green,
+            inputStream: inputStream,
+          ),
+        ),
+        //f3
         Positioned(
-            left: doLeft(375, context),
-            top: doTop(168, context),
-            child: Cewei(
-              redUrl: red,
-              greenUrl: green,
-              inputStream: inputStream,
-              index: 2,
+          left: doLeft(411, context),
+          top: doTop(168, context),
+          child: Cewei(
+            index: 3,
+            redUrl: red,
+            greenUrl: green,
+            inputStream: inputStream,
+          ),
+        ),
+        //f4
+        Positioned(
+          left: doLeft(450, context),
+          top: doTop(168, context),
+          child: Cewei(
+            index: 4,
+            redUrl: red,
+            greenUrl: green,
+            inputStream: inputStream,
+          ),
+        ),
+        //f5
+        Positioned(
+          left: doLeft(493, context),
+          top: doTop(168, context),
+          child: Cewei(
+            index: 5,
+            redUrl: red,
+            greenUrl: green,
+            inputStream: inputStream,
+          ),
+        ),
+        //f6
+        Positioned(
+          left: doLeft(529, context),
+          top: doTop(168, context),
+          child: Cewei(
+            index: 6,
+            redUrl: red,
+            greenUrl: green,
+            inputStream: inputStream,
+          ),
+        ),
+
+        Positioned(
+          left: doLeft(570, context),
+          top: doTop(168, context),
+          child: Cewei(
+            index: 15,
+            redUrl: red,
+            greenUrl: green,
+            inputStream: inputStream,
+          ),
+        ),
+        Positioned(
+          left: doLeft(606, context),
+          top: doTop(168, context),
+          child: Cewei(
+            index: 16,
+            redUrl: red,
+            greenUrl: green,
+            inputStream: inputStream,
+          ),
+        ),
+        Positioned(
+          left: doLeft(641, context),
+          top: doTop(168, context),
+          child: Cewei(
+            index: 17,
+            redUrl: red,
+            greenUrl: green,
+            inputStream: inputStream,
+          ),
+        ),
+
+        ///////////// 第二排 /////////////
+        Positioned(
+          left: doLeft(388, context),
+          top: doTop(270, context),
+          child: Cewei(
+            index: 7,
+            redUrl: red_r,
+            greenUrl: green_r,
+            inputStream: inputStream,
+          ),
+        ),
+        Positioned(
+          left: doLeft(424, context),
+          top: doTop(270, context),
+          child: Cewei(
+            index: 8,
+            redUrl: red_r,
+            greenUrl: green_r,
+            inputStream: inputStream,
+          ),
+        ),
+        Positioned(
+          left: doLeft(459, context),
+          top: doTop(270, context),
+          child: Cewei(
+            index: 9,
+            redUrl: red_r,
+            greenUrl: green_r,
+            inputStream: inputStream,
+          ),
+        ),
+        Positioned(
+          left: doLeft(493, context),
+          top: doTop(270, context),
+          child: Cewei(
+            index: 10,
+            redUrl: red_r,
+            greenUrl: green_r,
+            inputStream: inputStream,
+          ),
+        ),
+        Positioned(
+          left: doLeft(528, context),
+          top: doTop(270, context),
+          child: Cewei(
+            index: 11,
+            redUrl: red_r,
+            greenUrl: green_r,
+            inputStream: inputStream,
+          ),
+        ),
+
+        Positioned(
+          left: doLeft(570, context),
+          top: doTop(270, context),
+          child: Cewei(
+            index: 18,
+            redUrl: red_r,
+            greenUrl: green_r,
+            inputStream: inputStream,
+          ),
+        ),
+        Positioned(
+          left: doLeft(605, context),
+          top: doTop(270, context),
+          child: Cewei(
+            index: 19,
+            redUrl: red_r,
+            greenUrl: green_r,
+            inputStream: inputStream,
+          ),
+        ),
+        Positioned(
+          left: doLeft(641, context),
+          top: doTop(270, context),
+          child: Cewei(
+            index: 20,
+            redUrl: red_r,
+            greenUrl: green_r,
+            inputStream: inputStream,
+          ),
+        ),
+
+        /////////// 第三排 ///////////
+        Positioned(
+          left: doLeft(388, context),
+          top: doTop(328, context),
+          child: Cewei(
+            index: 12,
+            redUrl: red,
+            greenUrl: green,
+            inputStream: inputStream,
+          ),
+        ),
+        Positioned(
+          left: doLeft(424, context),
+          top: doTop(328, context),
+          child: Cewei(
+            index: 13,
+            redUrl: red,
+            greenUrl: green,
+            inputStream: inputStream,
+          ),
+        ),
+        Positioned(
+          left: doLeft(458, context),
+          top: doTop(328, context),
+          child: Cewei(
+            index: 14,
+            redUrl: red,
+            greenUrl: green,
+            inputStream: inputStream,
+          ),
+        ),
+
+        Positioned(
+          left: doLeft(500, context),
+          top: doTop(298, context),
+          child: Cewei(
+            index: 21,
+            redUrl: "assets/images/4_01.png",
+            greenUrl: "assets/images/3_01.png",
+            width: 30,
+            height: 68,
+            inputStream: inputStream,
+          ),
+
+        ),
+        Positioned(
+          left: doLeft(528, context),
+          top: doTop(304, context),
+          child: Cewei(
+            index: 22,
+            redUrl: "assets/images/4_02.png",
+            greenUrl: "assets/images/3_02.png",
+            width: 30,
+            height: 58,
+            inputStream: inputStream,
+          ),
+
+        ),
+
+        /////////////// 满意度评价区 /////////////
+        Positioned(
+          left: doLeft(788, context),
+          top: doTop(350, context),
+          child: StatisWidget(),
+        ),
+        Positioned(
+          left: doLeft(788, context),
+          top: doTop(350, context),
+          child: Num(
+            number: (smileNum + normalNum + sadNum) == 0
+                ? "0.0%"
+                : (smileNum * 100 / (smileNum + normalNum + sadNum))
+                        .toStringAsFixed(1) +
+                    "%",
+            size: 12,
+          ),
+        ),
+        Positioned(
+          left: doLeft(843, context),
+          top: doTop(350, context),
+          child: Num(
+            number: (smileNum + normalNum + sadNum) == 0
+                ? "0.0%"
+                : (normalNum * 100 / (smileNum + normalNum + sadNum))
+                        .toStringAsFixed(1) +
+                    "%",
+            size: 12,
+          ),
+        ),
+        Positioned(
+          left: doLeft(898, context),
+          top: doTop(350, context),
+          child: Num(
+            number: (smileNum + normalNum + sadNum) == 0
+                ? "0.0%"
+                : (sadNum * 100 / (smileNum + normalNum + sadNum))
+                        .toStringAsFixed(1) +
+                    "%",
+            size: 12,
+          ),
+        ),
+        /////////////// 今日客流 /////////////
+        Positioned(
+          left: doLeft(795, context),
+          top: doTop(476, context),
+          child: Num(
+            number: todayFemale.toString(),
+          ),
+        ),
+        Positioned(
+          left: doLeft(900, context),
+          top: doTop(476, context),
+          child: Num(
+            number: todayMan.toString(),
+          ),
+        ),
+        /////////////////// 当前时间 ////////////////
+        Positioned(
+            left: doLeft(790, context),
+            top: doTop(110, context),
+            child: TimerWidget()),
+        Positioned(
+          left: 1,
+          top: 1,
+          child: Offstage(offstage: !download, child: Text(progress)),
+        ),
+        Positioned(
+            left: 0,
+            top: 0,
+            child: FlatButton(
+              onPressed: openUsbPorts,
+              child: Text(""),
             )),
+        // Positioned(
+        //     left: MediaQuery.of(context).size.width - 50,
+        //     top: 15,
+        //     child: InkWell(
+        //       onTap: () => Navigator.pushNamed(context, "/setting"),
+        //       child: Icon(
+        //         Icons.settings,
+        //         color: Colors.white70,
+        //       ),
+        //     )),
       ],
     ));
   }
