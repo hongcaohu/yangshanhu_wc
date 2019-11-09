@@ -875,11 +875,6 @@ class _MyHomePageState extends State<MyHomePage> {
         Positioned(
           left: doLeft(788, context),
           top: doTop(350, context),
-          child: StatisWidget(),
-        ),
-        Positioned(
-          left: doLeft(788, context),
-          top: doTop(350, context),
           child: Num(
             number: (smileNum + normalNum + sadNum) == 0
                 ? "0.0%"
