@@ -26,7 +26,7 @@ dependencies:
   flustars: ^0.2.6+1
   usb_serial: ^0.2.3
   crclib: ^1.0.1
-  dio: 2.2.2
+  dio: ">=2.2.2 <6.0.0"
   package_info: 0.4.0+6
   scoped_model: ^1.0.1
   path_provider: ^1.4.0
